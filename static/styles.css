@@ -1,0 +1,88 @@
+:root {
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f7f7fb;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.logged-in-button {
+  padding: 10px 16px;
+  background: #fff;
+  color: #1a73e8;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: default;
+  display: inline-block;
+}
+
+.logged-in-button:hover {
+  background: #f8faff;
+}
+
+#title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px; /* spacing between logo and title */
+  margin-bottom: 16px;
+}
+
+#broadciel-logo {
+  height: 40px;        /* adjust as you like */
+  width: auto;
+  object-fit: contain;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+button {
+  background: #2563eb;
+  border: none;
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hidden {
+  display: none;
+}
+
+#preview-table {
+  overflow-x: auto;
+  margin-top: 1rem;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border: 1px solid #e2e8f0;
+  padding: 0.5rem;
+  font-size: 0.9rem;
+}
+

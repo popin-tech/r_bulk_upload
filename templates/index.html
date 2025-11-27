@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Broadciel Campaign Management Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <script src="{{ url_for('static', filename='main.js') }}" defer></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+  </head>
+  <body>
+    <main class="container">
+      <section id="auth-section">
+        <div id="title-row">
+          <img src="{{ url_for('static', filename='broadciellogo.png') }}" id="broadciel-logo" />
+          <h1>Broadciel Campaign Management Platform</h1>
+        </div>
+        <div id="g_id_onload"
+             data-client_id="439393162392-cjutf0jdpofs237mqu52goiafq3gqvtg.apps.googleusercontent.com"
+             data-context="signin"
+             data-ux_mode="popup"
+             data-callback="handleGoogleCredential">
+        </div>
+        <div id="g_id_signin_container">
+          <div class="g_id_signin" data-type="standard"></div>
+        </div>
+        <p id="user-info"></p>
+      </section>
+
+      <section id="template-section" class="card hidden">
+        <h2>Download Excel Template</h2>
+        <p>Download a template to prepare your campaign sheet.</p>
+        <button id="download-template-button">Download Template</button>
+      </section>
+
+      <section id="account-section" class="card hidden">
+        <h2>Select Account</h2>
+        <p>Choose which Broadciel account to use when syncing.</p>
+        <label for="account-select">Account</label>
+        <select id="account-select" name="account_email" required>
+          <option value="" disabled selected>Select an account</option>
+          {% for email in account_emails %}
+            <option value="{{ email }}">{{ email }}</option>
+          {% endfor %}
+        </select>
+      </section>
+            
+      <section id="upload-section" class="card hidden">
+        <h2>Upload Excel</h2>
+        <form id="upload-form">
+          <input type="file" id="sheet" name="sheet" accept=".xlsx,.xls" required />
+          <button type="submit">Generate Preview</button>
+        </form>
+      </section>
+
+      <section id="preview-section" class="card hidden">
+        <h2>Preview</h2>
+        <div id="preview-meta"></div>
+        <div id="preview-table"></div>
+        <button id="commit-button">Confirm &amp; Sync</button>
+      </section>
+    </main>
+  </body>
+</html>
+
+

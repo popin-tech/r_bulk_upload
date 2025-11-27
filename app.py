@@ -1,0 +1,177 @@
+import os
+import json
+from pathlib import Path
+from io import BytesIO
+from dataclasses import asdict
+from typing import Any, Dict
+from openpyxl import Workbook
+
+from flask import Flask, jsonify, request, send_from_directory, render_template, send_file
+
+from services.auth import AuthError, GoogleUser, verify_google_token
+from services.broadciel_client import BroadcielClient
+from services.upload_service import UploadParsingError, parse_excel
+
+app = Flask(__name__)
+
+# Configuration
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
+app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
+app.config["BROADCIEL_API_BASE_URL"] = os.getenv(
+    "BROADCIEL_API_BASE_URL",
+    "https://broadciel.console.rixbeedesk.com/api/ads/v2",
+)
+app.config["BROADCIEL_API_KEY"] = os.getenv("BROADCIEL_API_KEY", "")
+app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "20")) * 1024 * 1024
+app.config["ENABLE_FRONTEND"] = os.getenv("ENABLE_FRONTEND", "true").lower() == "true"
+ALLOWED_EMAILS = {
+    "fu.leopold@gmail.com",
+    "spigflying@gmail.com"
+}
+_ACCOUNTS_CACHE: list[dict[str, Any]] | None = None
+_TOKEN_BY_EMAIL: dict[str, str] = {}
+
+def _load_accounts() -> list[dict[str, Any]]:
+    """Load accounts from static/account.json once and cache them."""
+    global _ACCOUNTS_CACHE, _TOKEN_BY_EMAIL
+
+    if _ACCOUNTS_CACHE is not None:
+        return _ACCOUNTS_CACHE
+
+    json_path = Path(app.static_folder) / "account.json"
+    if not json_path.exists():
+        app.logger.warning("account.json not found in static folder: %s", json_path)
+        _ACCOUNTS_CACHE = []
+        _TOKEN_BY_EMAIL = {}
+        return _ACCOUNTS_CACHE
+
+    with json_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Expecting: [{"email": "...", "token": "..."}, ...]
+    _ACCOUNTS_CACHE = data
+    _TOKEN_BY_EMAIL = {
+        (item.get("email") or "").lower(): item.get("token", "")
+        for item in data
+        if item.get("email") and item.get("token")
+    }
+    app.logger.info("Loaded %d accounts from %s", len(_ACCOUNTS_CACHE), json_path)
+    return _ACCOUNTS_CACHE
+
+
+def _get_token_for_email(email: str) -> str | None:
+    """Lookup Broadciel token by account email from account.json."""
+    if not email:
+        return None
+    _load_accounts()
+    return _TOKEN_BY_EMAIL.get(email.lower())
+
+def _get_token_from_header() -> str:
+    header = request.headers.get("Authorization", "")
+    if header.startswith("Bearer "):
+        return header.split(" ", 1)[1]
+    return ""
+
+
+def _require_user() -> GoogleUser:
+    token = _get_token_from_header()
+    try:
+        user = verify_google_token(token, app.config["GOOGLE_CLIENT_ID"])
+    except AuthError as exc:
+        return _error(str(exc), 401)
+
+    email = (user.email or "").lower()
+    if email not in ALLOWED_EMAILS:
+        return _error("You are not authorized to use this app.", 403)
+
+    return user
+
+def _broadciel_client() -> BroadcielClient:
+    return BroadcielClient(
+        base_url=app.config["BROADCIEL_API_BASE_URL"],
+        api_key=app.config["BROADCIEL_API_KEY"],
+    )
+
+
+def _error(message: str, status: int):
+    response = jsonify({"error": message})
+    response.status_code = status
+    return response
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/me", methods=["GET"])
+def me():
+    user = _require_user()
+    if isinstance(user, GoogleUser):
+        return jsonify({"user": asdict(user)})
+    return user  # error response
+
+@app.route("/api/template", methods=["GET"])
+def download_template():
+    user = _require_user()
+    if not isinstance(user, GoogleUser):
+        return user  # 401 / 403
+
+    # File lives in /app/static/campaign_sheet_template.xlsx inside the container
+    return send_from_directory(
+        "static",
+        "campaign_sheet_template.xlsx",
+        as_attachment=True,
+        download_name="campaign_sheet_template.xlsx",
+    )
+
+@app.route("/api/upload-preview", methods=["POST"])
+def upload_preview():
+    user = _require_user()
+    if not isinstance(user, GoogleUser):
+        return user
+
+    file = request.files.get("sheet")
+    if not file:
+        return _error("Missing Excel file (sheet).", 400)
+
+    try:
+        preview = parse_excel(file.read())
+    except UploadParsingError as exc:
+        return _error(str(exc), 400)
+
+    return jsonify({"preview": preview, "uploaded_by": asdict(user)})
+
+
+@app.route("/api/commit", methods=["POST"])
+def commit():
+    user = _require_user()
+    if not isinstance(user, GoogleUser):
+        return user
+
+    payload: Dict[str, Any] = request.get_json() or {}
+    changes = payload.get("changes")
+    if not changes:
+        return _error("Missing changes payload.", 400)
+
+    client = _broadciel_client()
+    try:
+        response = client.upsert_campaigns({"changes": changes})
+    except Exception as exc:  # pragma: no cover - upstream error surface
+        return _error(f"Broadciel API error: {exc}", 502)
+
+    return jsonify({"result": response, "committed_by": asdict(user)})
+
+
+if app.config.get("ENABLE_FRONTEND", False):
+    @app.route("/")
+    def index():
+        accounts = _load_accounts()
+        account_emails = [
+            item.get("email") for item in accounts if item.get("email")
+        ]
+        return render_template("index.html", account_emails=account_emails)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
