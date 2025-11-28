@@ -6,7 +6,7 @@
     <title>Broadciel Campaign Management Platform</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
     <script src="{{ url_for('static', filename='main.js') }}" defer></script>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://accounts.google.com/gsi/client" defer></script>
   </head>
   <body>
     <main class="container">
@@ -34,16 +34,13 @@
       </section>
 
       <section id="account-section" class="card hidden">
-        <h2>Select Account</h2>
-        <p>Choose which Broadciel account to use when syncing.</p>
-        <label for="account-select">Account</label>
+        <h2>Select an Account</h2>
         <select id="account-select" name="account_email" required>
           <option value="" disabled selected>Select an account</option>
-          {% for email in account_emails %}
-            <option value="{{ email }}">{{ email }}</option>
-          {% endfor %}
         </select>
       </section>
+
+
             
       <section id="upload-section" class="card hidden">
         <h2>Upload Excel</h2>
