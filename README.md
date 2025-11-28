@@ -1,58 +1,217 @@
-# Cloud Run Hello World with Cloud Code
+# Broadciel Campaign Management Platform — Bulk Upload Tool
 
-"Hello World" is a [Cloud Run](https://cloud.google.com/run/docs) application that renders a simple webpage.
+This repository contains the source code for the **Broadciel Campaign Management Platform (Bulk Upload Tool)** — a secure internal web application used to:
 
-For details on how to use this sample as a template in Cloud Code, read the documentation for Cloud Code for [VS Code](https://cloud.google.com/code/docs/vscode/quickstart-cloud-run?utm_source=ext&utm_medium=partner&utm_campaign=CDR_kri_gcp_cloudcodereadmes_012521&utm_content=-) or [IntelliJ](https://cloud.google.com/code/docs/intellij/quickstart-cloud-run?utm_source=ext&utm_medium=partner&utm_campaign=CDR_kri_gcp_cloudcodereadmes_012521&utm_content=-).
+- Authenticate internal users via **Google Identity Services**
+- Download an Excel campaign template
+- Upload & preview campaign data
+- Validate and commit changes to the **Broadciel API**
+- Map each upload to a selected **Broadciel account** using secure backend tokens
 
-### Table of Contents
-* [Getting Started with VS Code](#getting-started-with-vs-code)
-* [Getting Started with IntelliJ](#getting-started-with-intellij)
-* [Sign up for User Research](#sign-up-for-user-research)
-
----
-## Getting Started with VS Code
-
-### Run the app locally with the Cloud Run Emulator
-1. In the Cloud Code status bar, click on the active project name and select 'Run on Cloud Run Emulator'.  
-![image](./img/status-bar.png)
-
-2. Use the Cloud Run Emulator dialog to specify your [builder option](https://cloud.google.com/code/docs/vscode/deploying-a-cloud-run-app#deploying_a_cloud_run_service). Cloud Code supports Docker, Jib, and Buildpacks. See the skaffold documentation on [builders](https://skaffold.dev/docs/builders/) for more information about build artifact types.  
-![image](./img/build-config.png)
-
-3. Click ‘Run’. Cloud Code begins building your image.
-
-4. View the build progress in the OUTPUT window. Once the build has finished, click on the URL in the OUTPUT window to view your live application.  
-![image](./img/cloud-run-url.png)
-
-5. To stop the application, click the stop icon on the Debug Toolbar.
+The app is designed for deployment on **Google Cloud Run**, with dependencies handled through `requirements.txt`.
 
 ---
-## Getting Started with IntelliJ
 
-### Run the app locally with the Cloud Run Emulator
+## 🚀 Features
 
-#### Define run configuration
+### ✔ Google Sign-In Authentication (GIS + OAuth2)
+- Secure front-end login using Google Identity Services
+- Backend verification of Google ID tokens
+- Email whitelist for internal usage only
+- Login button transforms into:
+  **“Logged in as xxx (click to logout)”**
 
-1. Click the Run/Debug configurations dropdown on the top taskbar and select 'Edit Configurations'.  
-![image](./img/edit-config.png)
+### ✔ Section-Based UI Security
+The following sections remain **hidden until authentication**:
 
-2. Select 'Cloud Run: Run Locally' and specify your [builder option](https://cloud.google.com/code/docs/intellij/developing-a-cloud-run-app#defining_your_run_configuration). Cloud Code supports Docker, Jib, and Buildpacks. See the skaffold documentation on [builders](https://skaffold.dev/docs/builders/) for more information about build artifact types.  
-![image](./img/local-build-config.png)
+- Download Template
+- Account Selection
+- Excel Upload
+- Preview Table
+- Commit to Broadciel
 
-#### Run the application
-1. Click the Run/Debug configurations dropdown and select 'Cloud Run: Run Locally'. Click the run icon.  
-![image](./img/config-run-locally.png)
-
-2. View the build process in the output window. Once the build has finished, you will receive a notification from the Event Log. Click 'View' to access the local URLs for your deployed services.  
-![image](./img/local-success.png)
+Authorization is validated on **both frontend & backend** for security.
 
 ---
-## Sign up for User Research
 
-We want to hear your feedback!
+## ✔ Secure Account Selection
 
-The Cloud Code team is inviting our user community to sign-up to participate in Google User Experience Research. 
+Account list is stored in:
 
-If you’re invited to join a study, you may try out a new product or tell us what you think about the products you use every day. At this time, Google is only sending invitations for upcoming remote studies. Once a study is complete, you’ll receive a token of thanks for your participation such as a gift card or some Google swag. 
+```
+static/account.json
+```
 
-[Sign up using this link](https://google.qualtrics.com/jfe/form/SV_4Me7SiMewdvVYhL?reserved=1&utm_source=In-product&Q_Language=en&utm_medium=own_prd&utm_campaign=Q1&productTag=clou&campaignDate=January2021&referral_code=UXbT481079) and answer a few questions about yourself, as this will help our research team match you to studies that are a great fit.
+Format:
+
+```json
+[
+  {
+    "email": "example@domain.com",
+    "token": "abc123..."
+  }
+]
+```
+
+- Loaded server-side only
+- Frontend receives **email list only**
+- Broadciel token is used **only on backend** during commit
+
+---
+
+## ✔ Excel Upload + Preview Flow
+
+- Accepts `.xlsx` / `.xls`
+- Reads the file using `openpyxl` via `parse_excel()`
+- Returns preview (columns, sample rows, counts)
+- Errors returned cleanly as HTTP 400
+
+---
+
+## ✔ Commit to Broadciel API
+
+Backend performs:
+
+1. Validates authentication
+2. Validates selected Broadciel account
+3. Looks up token by email
+4. Calls Broadciel API using `BroadcielClient`
+5. Returns response to frontend
+
+All heavy lifting stays server-side for security.
+
+---
+
+## 🧱 Project Structure
+
+```
+r_bulk_upload/
+│
+├── app.py                         # Main Flask application
+├── requirements.txt
+│
+├── services/
+│   ├── auth.py                    # Google token verification & user model
+│   ├── upload_service.py          # Excel parsing service
+│   └── broadciel_client.py        # Broadciel API client
+│
+├── static/
+│   ├── main.js                    # Frontend JS logic
+│   ├── styles.css                 # CSS
+│   ├── account.json               # Email → token map
+│   ├── campaign_sheet_template.xlsx
+│   └── broadciellogo.png
+│
+└── templates/
+    └── index.html                 # Main UI page
+```
+
+---
+
+## ⚙️ Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SECRET_KEY` | Flask session secret | dev-secret-change-me |
+| `GOOGLE_CLIENT_ID` | GIS Client ID | — |
+| `BROADCIEL_API_BASE_URL` | Broadciel API base | https://broadciel.console.rixbeedesk.com/api/ads/v2 |
+| `BROADCIEL_API_KEY` | API key (if required) | — |
+| `MAX_CONTENT_LENGTH_MB` | Upload limit | 20 |
+| `ENABLE_FRONTEND` | Serve index.html | true |
+
+---
+
+## 🛠 Local Development
+
+### 1. Create virtual environment
+
+```sh
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Export environment variables
+
+```sh
+export GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+export BROADCIEL_API_KEY=your_key
+```
+
+### 3. Run locally
+
+```sh
+python app.py
+```
+
+App will start on:
+
+```
+http://localhost:8080
+```
+
+---
+
+## ☁️ Deployment (Cloud Run)
+
+### Build & deploy
+
+```sh
+gcloud builds submit --tag gcr.io/PROJECT_ID/r-bulk-upload
+
+gcloud run deploy r-bulk-upload     --image gcr.io/PROJECT_ID/r-bulk-upload     --region asia-east1     --platform managed     --allow-unauthenticated=false
+```
+
+---
+
+## 🔒 Security Notes
+
+- Broadciel tokens **never** sent to frontend
+- Only validated users can call API endpoints
+- Every sensitive operation is revalidated on backend
+- account.json should contain **service tokens only (not passwords)**
+- Google token is cryptographically verified using signatures
+
+---
+
+## 🧪 API Endpoints
+
+| Endpoint | Method | Description | Auth |
+|----------|--------|-------------|------|
+| `/api/me` | GET | Validate Google token | ✔ |
+| `/api/accounts` | GET | Fetch Broadciel account list | ✔ |
+| `/api/template` | GET | Download Excel template | ✔ |
+| `/api/upload-preview` | POST | Upload Excel → preview | ✔ |
+| `/api/commit` | POST | Commit data to Broadciel | ✔ |
+| `/api/health` | GET | Health check | ❌ |
+
+---
+
+## 🏁 Development Workflow
+
+1. Create a new branch:
+
+```sh
+git checkout -b feature/your-feature
+```
+
+2. Commit code:
+
+```sh
+git add .
+git commit -m "Description of update"
+```
+
+3. Push:
+
+```sh
+git push -u origin feature/your-feature
+```
+
+4. Open Pull Request on GitHub.
+
+---
+
+## 📄 License
+
+Internal proprietary tool — **not for public redistribution**.
