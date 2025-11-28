@@ -57,6 +57,56 @@ function logout() {
   location.reload();
 }
 
+async function loadAccounts() {
+  if (!accountSelect) {
+    console.warn("[loadAccounts] accountSelect not found");
+    return;
+  }
+  if (!idToken) {
+    console.warn("[loadAccounts] no idToken, abort");
+    return;
+  }
+
+  try {
+    console.log("[loadAccounts] fetching /api/accounts");
+    const resp = await fetch("/api/accounts", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+
+    console.log("[loadAccounts] /api/accounts status:", resp.status);
+    if (!resp.ok) {
+      console.error("[loadAccounts] failed:", await resp.text());
+      return;
+    }
+
+    const data = await resp.json();
+    const accounts = data.accounts || [];
+
+    // Reset options
+    accountSelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    placeholder.textContent = "Select an account";
+    accountSelect.appendChild(placeholder);
+
+    accounts.forEach((email) => {
+      const opt = document.createElement("option");
+      opt.value = email;
+      opt.textContent = email;
+      accountSelect.appendChild(opt);
+    });
+
+    console.log("[loadAccounts] loaded accounts:", accounts.length);
+  } catch (err) {
+    console.error("[loadAccounts] error:", err);
+  }
+}
+
 function toggleSection(section, visible) {
   if (!section) {
     console.warn("[toggleSection] null section, visible =", visible);
@@ -91,15 +141,17 @@ async function handleGoogleCredential(response) {
       idToken = "";
       return;
     }
-
     const data = await meResp.json();
     console.log("[handleGoogleCredential] /api/me data:", data);
     const email = data.user?.email || "";
-    userInfo.textContent = "";
+    if (userInfo) {
+      userInfo.textContent = "";
+    }
     replaceGoogleButton(email);
     toggleSection(templateSection, true);
     toggleSection(uploadSection, true);
     if (accountSection) toggleSection(accountSection, true);
+    loadAccounts();
   } catch (err) {
     console.error("[handleGoogleCredential] Error calling /api/me:", err);
     userInfo.textContent = "Authentication failed. Please try again.";

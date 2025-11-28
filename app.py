@@ -26,7 +26,8 @@ app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "20"))
 app.config["ENABLE_FRONTEND"] = os.getenv("ENABLE_FRONTEND", "true").lower() == "true"
 ALLOWED_EMAILS = {
     "fu.leopold@gmail.com",
-    "spigflying@gmail.com"
+    "spigflying@gmail.com",
+    "daniel@popin.cc"
 }
 _ACCOUNTS_CACHE: list[dict[str, Any]] | None = None
 _TOKEN_BY_EMAIL: dict[str, str] = {}
@@ -99,6 +100,21 @@ def _error(message: str, status: int):
     return response
 
 
+@app.route("/api/accounts", methods=["GET"])
+def list_accounts():
+    user = _require_user()
+    if not isinstance(user, GoogleUser):
+        return user  # 401 / 403
+
+    accounts = _load_accounts()
+    emails = [
+        item.get("email")
+        for item in accounts
+        if item.get("email")
+    ]
+    return jsonify({"accounts": emails})
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
@@ -166,11 +182,9 @@ def commit():
 if app.config.get("ENABLE_FRONTEND", False):
     @app.route("/")
     def index():
-        accounts = _load_accounts()
-        account_emails = [
-            item.get("email") for item in accounts if item.get("email")
-        ]
-        return render_template("index.html", account_emails=account_emails)
+        # Do NOT send account_emails to the template anymore
+        return render_template("index.html")
+
 
 
 if __name__ == "__main__":
