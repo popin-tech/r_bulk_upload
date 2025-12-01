@@ -240,14 +240,29 @@ function renderPreview(preview) {
 if (uploadForm) {
   uploadForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    console.log("[uploadForm] submit");
+
     if (!idToken) {
       alert("Please sign in first.");
       return;
     }
 
-    const formData = new FormData(uploadForm);
+    const fileInput = uploadForm.querySelector('input[type="file"]');
+    const file = fileInput?.files?.[0];
+
+    if (!file) {
+      alert("Please choose an Excel file before generating preview.");
+      return;
+    }
+
+    const submitButton = uploadForm.querySelector('button[type="submit"], button');
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Generating Preview...";
+    }
+
     try {
+      const formData = new FormData(uploadForm);
+
       const response = await fetch("/api/upload-preview", {
         method: "POST",
         headers: {
@@ -255,16 +270,32 @@ if (uploadForm) {
         },
         body: formData,
       });
+
       console.log("[uploadForm] /api/upload-preview status:", response.status);
+
       if (!response.ok) {
-        throw new Error(await response.text());
+        const errText = await response.text();
+        throw new Error(errText || "Upload preview failed");
       }
+
       const { preview } = await response.json();
+      console.log("[uploadForm] preview data:", preview);
+
       lastPreview = preview;
       renderPreview(preview);
+
+      // allow commit only after preview is ready (optional)
+      if (commitButton) {
+        commitButton.disabled = false;
+      }
     } catch (error) {
-      console.error("[uploadForm] Upload failed:", error);
-      alert(`Upload failed: ${error}`);
+      console.error("[uploadForm] /api/upload-preview failed:", error);
+      alert(`Generate preview failed: ${error.message || error}`);
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Generate Preview";
+      }
     }
   });
 } else {
