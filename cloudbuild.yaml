@@ -1,0 +1,40 @@
+# cloudbuild.yaml
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # 1. Build image using Dockerfile
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build', 
+        '-t', 'asia-east1-docker.pkg.dev/popinpoc1/cloud-run-source-deploy/r_bulk_upload/cmp-r:$COMMIT_SHA',
+        '.'
+      ]
+
+  # 2. Push image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'push',
+        'asia-east1-docker.pkg.dev/popinpoc1/cloud-run-source-deploy/r_bulk_upload/cmp-r:$COMMIT_SHA'
+      ]
+
+  # 3. Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run', 'deploy', 'cmp-r',
+        '--image=asia-east1-docker.pkg.dev/popinpoc1/cloud-run-source-deploy/r_bulk_upload/cmp-r:$COMMIT_SHA',
+        '--region=asia-east1',
+        '--platform=managed',
+        '--allow-unauthenticated',
+        '--port=8080',
+        '--service-account=439393162392-compute@developer.gserviceaccount.com',
+        '--set-env-vars=GOOGLE_CLIENT_ID=439393162392-cjutf0jdpofs237mqu52goiafq3gqvtg.apps.googleusercontent.com'
+      ]
+
+images:
+  - 'asia-east1-docker.pkg.dev/popinpoc1/cloud-run-source-deploy/r_bulk_upload/cmp-r:$COMMIT_SHA'
