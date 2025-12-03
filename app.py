@@ -24,12 +24,8 @@ app.config["BROADCIEL_API_BASE_URL"] = os.getenv(
 app.config["BROADCIEL_API_KEY"] = os.getenv("BROADCIEL_API_KEY", "")
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "20")) * 1024 * 1024
 app.config["ENABLE_FRONTEND"] = os.getenv("ENABLE_FRONTEND", "true").lower() == "true"
-ALLOWED_EMAILS = {
-    "fu.leopold@gmail.com",
-    "spigflying@gmail.com",
-    "daniel@popin.cc"
-}
 _ACCOUNTS_CACHE: list[dict[str, Any]] | None = None
+_ALLOWED_EMAILS_CACHE: set[str] | None = None
 _TOKEN_BY_EMAIL: dict[str, str] = {}
 
 def _load_accounts() -> list[dict[str, Any]]:
@@ -59,6 +55,28 @@ def _load_accounts() -> list[dict[str, Any]]:
     app.logger.info("Loaded %d accounts from %s", len(_ACCOUNTS_CACHE), json_path)
     return _ACCOUNTS_CACHE
 
+def _load_allowed_emails() -> set[str]:
+    """Load allowed user emails from static/allowed_emails.json once and cache them."""
+    global _ALLOWED_EMAILS_CACHE
+
+    if _ALLOWED_EMAILS_CACHE is not None:
+        return _ALLOWED_EMAILS_CACHE
+
+    json_path = Path(app.static_folder) / "allowed_emails.json"
+    if not json_path.exists():
+        app.logger.warning("allowed_emails.json not found in static folder: %s", json_path)
+        _ALLOWED_EMAILS_CACHE = set()
+        return _ALLOWED_EMAILS_CACHE
+
+    with json_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Expecting: ["email1@example.com", "email2@example.com", ...]
+    emails = {str(e).lower() for e in data if e}
+    _ALLOWED_EMAILS_CACHE = emails
+    app.logger.info("Loaded %d allowed emails from %s", len(emails), json_path)
+    return _ALLOWED_EMAILS_CACHE
+
 
 def _get_token_for_email(email: str) -> str | None:
     """Lookup Broadciel token by account email from account.json."""
@@ -82,9 +100,9 @@ def _require_user() -> GoogleUser:
         return _error(str(exc), 401)
 
     email = (user.email or "").lower()
-    if email not in ALLOWED_EMAILS:
+    allowed_emails = _load_allowed_emails()
+    if email not in allowed_emails:
         return _error("You are not authorized to use this app.", 403)
-
     return user
 
 def _broadciel_client() -> BroadcielClient:
