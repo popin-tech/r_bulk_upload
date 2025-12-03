@@ -15,6 +15,8 @@ from services.upload_service import UploadParsingError, parse_excel
 app = Flask(__name__)
 
 # Configuration
+BASE_DIR = Path(__file__).resolve().parent
+CONFIG_DIR = BASE_DIR / "config"
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
 app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
 app.config["BROADCIEL_API_BASE_URL"] = os.getenv(
@@ -29,15 +31,15 @@ _ALLOWED_EMAILS_CACHE: set[str] | None = None
 _TOKEN_BY_EMAIL: dict[str, str] = {}
 
 def _load_accounts() -> list[dict[str, Any]]:
-    """Load accounts from static/account.json once and cache them."""
+    """Load accounts from config/account.json once and cache them."""
     global _ACCOUNTS_CACHE, _TOKEN_BY_EMAIL
 
     if _ACCOUNTS_CACHE is not None:
         return _ACCOUNTS_CACHE
 
-    json_path = Path(app.static_folder) / "account.json"
+    json_path = CONFIG_DIR / "account.json"
     if not json_path.exists():
-        app.logger.warning("account.json not found in static folder: %s", json_path)
+        app.logger.warning("account.json not found in config folder: %s", json_path)
         _ACCOUNTS_CACHE = []
         _TOKEN_BY_EMAIL = {}
         return _ACCOUNTS_CACHE
@@ -45,7 +47,6 @@ def _load_accounts() -> list[dict[str, Any]]:
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
-    # Expecting: [{"email": "...", "token": "..."}, ...]
     _ACCOUNTS_CACHE = data
     _TOKEN_BY_EMAIL = {
         (item.get("email") or "").lower(): item.get("token", "")
@@ -62,9 +63,9 @@ def _load_allowed_emails() -> set[str]:
     if _ALLOWED_EMAILS_CACHE is not None:
         return _ALLOWED_EMAILS_CACHE
 
-    json_path = Path(app.static_folder) / "allowed_emails.json"
+    json_path = CONFIG_DIR / "allowed_emails.json"
     if not json_path.exists():
-        app.logger.warning("allowed_emails.json not found in static folder: %s", json_path)
+        app.logger.warning("allowed_emails.json not found in config folder: %s", json_path)
         _ALLOWED_EMAILS_CACHE = set()
         return _ALLOWED_EMAILS_CACHE
 
