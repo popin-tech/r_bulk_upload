@@ -6,18 +6,18 @@ from dataclasses import asdict
 from typing import Any, Dict
 from openpyxl import Workbook
 
-from flask import Flask, jsonify, request, send_from_directory, render_template, send_file, Response
+from flask import Flask, jsonify, request, send_from_directory, render_template, send_file, session, redirect, url_for
 
 from services.auth import AuthError, GoogleUser, verify_google_token
 from services.broadciel_client import BroadcielClient
-from services.upload_service import UploadParsingError, parse_excel, parse_excel_df, excel_to_campaign_json
+from services.upload_service import UploadParsingError, parse_excel
 
 app = Flask(__name__)
 
 # Configuration
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me-please")
 app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
 app.config["BROADCIEL_API_BASE_URL"] = os.getenv(
     "BROADCIEL_API_BASE_URL",
@@ -94,7 +94,16 @@ def _get_token_from_header() -> str:
 
 
 def _require_user() -> GoogleUser:
+    # 1. Try session first (Preferred)
+    if "user" in session:
+        user_data = session["user"]
+        return GoogleUser(**user_data)
+
+    # 2. Fallback to Bearer token (Legacy/API support)
     token = _get_token_from_header()
+    if not token:
+        return _error("Authentication required.", 401)
+
     try:
         user = verify_google_token(token, app.config["GOOGLE_CLIENT_ID"])
     except AuthError as exc:
@@ -104,6 +113,7 @@ def _require_user() -> GoogleUser:
     allowed_emails = _load_allowed_emails()
     if email not in allowed_emails:
         return _error("You are not authorized to use this app.", 403)
+    
     return user
 
 def _broadciel_client() -> BroadcielClient:
@@ -114,15 +124,41 @@ def _broadciel_client() -> BroadcielClient:
 
 
 def _error(message: str, status: int):
-    payload = {"error": message}
-    data = json.dumps(payload, ensure_ascii=False)
-    return Response(
-        response=data,
-        status=status,
-        mimetype="application/json; charset=utf-8",
-    )
+    response = jsonify({"error": message})
+    response.status_code = status
+    return response
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    """Exchange Google Token for Server-side Session."""
+    data = request.get_json() or {}
+    token = data.get("token")
+    
+    if not token:
+        return _error("Missing token.", 400)
+
+    try:
+        user = verify_google_token(token, app.config["GOOGLE_CLIENT_ID"])
+    except AuthError as exc:
+        return _error(str(exc), 401)
+
+    email = (user.email or "").lower()
+    allowed_emails = _load_allowed_emails()
+    if email not in allowed_emails:
+        return _error("You are not authorized to use this app.", 403)
+
+    # Set session
+    session["user"] = asdict(user)
+    session.permanent = True  # Use permanent session (default 31 days)
+    
+    return jsonify({"status": "ok", "user": asdict(user)})
 
 
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    """Clear Server-side Session."""
+    session.clear()
+    return jsonify({"status": "ok"})
 @app.route("/api/accounts", methods=["GET"])
 def list_accounts():
     user = _require_user()
@@ -184,38 +220,22 @@ def upload_preview():
 
 @app.route("/api/commit", methods=["POST"])
 def commit():
-    # 1) auth
     user = _require_user()
     if not isinstance(user, GoogleUser):
         return user
 
-    # 2) get excel file
-    upload = request.files.get("file")
-    if upload is None or upload.filename == "":
-        return _error("No Excel file uploaded.", 400)
+    payload: Dict[str, Any] = request.get_json() or {}
+    changes = payload.get("changes")
+    if not changes:
+        return _error("Missing changes payload.", 400)
 
+    client = _broadciel_client()
     try:
-        # 3) read bytes
-        file_bytes = upload.read()
+        response = client.upsert_campaigns({"changes": changes})
+    except Exception as exc:  # pragma: no cover - upstream error surface
+        return _error(f"Broadciel API error: {exc}", 502)
 
-        # 4) full DataFrame
-        df = parse_excel_df(file_bytes)
-
-        # 5) to JSON (campaign only)
-        campaign_payload = excel_to_campaign_json(df)
-        app.logger.info("=== Campaign JSON Parsed ===")
-        app.logger.info(campaign_payload)   # Cloud Run logs
-        print("=== Campaign JSON Parsed ===")
-        print(campaign_payload)
-
-    except UploadParsingError as exc:
-        return _error(str(exc), 400)
-    except Exception as exc:
-        return _error(f"Unexpected error: {exc}", 500)
-    return jsonify({
-        "status": "ok",
-        "campaign": campaign_payload["campaign"]
-    })
+    return jsonify({"result": response, "committed_by": asdict(user)})
 
 
 if app.config.get("ENABLE_FRONTEND", False):
@@ -224,7 +244,15 @@ if app.config.get("ENABLE_FRONTEND", False):
         # Do NOT send account_emails to the template anymore
         return render_template("index.html")
 
+    @app.route("/login")
+    def login():
+        return render_template("login.html")
 
+    @app.route("/cmp")
+    def cmp():
+        if "user" not in session:
+            return redirect(url_for("login"))
+        return render_template("cmp.html")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Broadciel Campaign Management Platform</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="{{ url_for('static', filename='login.css') }}" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" defer></script>
+</head>
+
+<body>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+
+    <div class="login-container">
+        <div class="login-card">
+            <div class="logo-container">
+                <img src="{{ url_for('static', filename='broadciellogo.png') }}" alt="Broadciel Logo">
+            </div>
+
+            <h1 class="login-title">popIn CMP</h1>
+            <p class="login-subtitle">Sign in to access the Campaign Management Platform</p>
+
+            <div class="google-signin-wrapper">
+                <div id="g_id_onload"
+                    data-client_id="439393162392-cjutf0jdpofs237mqu52goiafq3gqvtg.apps.googleusercontent.com"
+                    data-context="signin" data-ux_mode="popup" data-callback="handleGoogleCredential">
+                </div>
+                <div id="g_id_signin_container">
+                    <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline"
+                        data-text="signin_with" data-shape="pill" data-logo_alignment="left">
+                    </div>
+                </div>
+                <p id="user-info"></p>
+            </div>
+
+            <div id="success-message" class="success-message">
+                ✓ Successfully authenticated! Redirecting...
+            </div>
+
+            <div class="login-footer">
+                • Internal use only
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='auth.js') }}"></script>
+</body>
+
+</html>
