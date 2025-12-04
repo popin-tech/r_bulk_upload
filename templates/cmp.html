@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMP Dashboard - Broadciel</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="{{ url_for('static', filename='cmp.css') }}" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" defer></script>
+</head>
+
+<body>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+
+    <header class="cmp-header">
+        <div class="header-left">
+            <img src="{{ url_for('static', filename='broadciellogo.png') }}" alt="Broadciel Logo" class="header-logo">
+            <div class="header-title">Campaign Management Platform</div>
+        </div>
+        <div class="header-right">
+            <div class="user-profile">
+                <div class="user-avatar" id="user-avatar">U</div>
+                <div class="user-info">
+                    <div class="user-name" id="user-name">User</div>
+                </div>
+            </div>
+            <button onclick="logout()" class="logout-btn">
+                Sign Out
+            </button>
+        </div>
+    </header>
+
+    <main class="cmp-main">
+        <div class="workspace-container">
+            <div class="workspace-header">
+                <div>
+                    <h2 class="workspace-title">Bulk Upload</h2>
+                    <p style="color: rgba(255,255,255,0.7); margin-top: 8px;">Upload and manage your campaign data</p>
+                </div>
+                <button id="download-template-btn" class="logout-btn" style="margin: 0;">
+                    Download Template
+                </button>
+            </div>
+
+            <div class="step-container">
+                <div class="step-header">
+                    <span class="step-number">1</span>
+                    <h3 class="step-title">Select an Account</h3>
+                </div>
+                <div class="step-content">
+                    <select id="account-select" class="account-dropdown">
+                        <option value="">Loading accounts...</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="step-2" class="step-container" style="display: none;">
+                <div class="step-header">
+                    <span class="step-number">2</span>
+                    <h3 class="step-title">Upload Excel</h3>
+                </div>
+                <div class="step-content">
+                    <div class="upload-area">
+                        <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display: none;">
+                        <label for="excel-file-input" class="upload-label">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <span class="upload-text">Click to upload or drag and drop</span>
+                            <span class="upload-hint">Excel files (.xlsx, .xls)</span>
+                        </label>
+                        <div id="file-info-row" class="file-info-row" style="display: none;">
+                            <div class="file-info">
+                                <span id="file-name"></span>
+                                <button id="remove-file-btn" class="remove-file-btn">×</button>
+                            </div>
+                            <button id="generate-preview-btn" class="action-btn">
+                                Generate Preview
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="cmp-footer">
+        &copy; 2025 popIn. All rights reserved. • Internal Use Only
+    </footer>
+
+    <script src="{{ url_for('static', filename='auth.js') }}"></script>
+    <script src="{{ url_for('static', filename='cmp.js') }}"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const userEmail = localStorage.getItem('user_email');
+            if (userEmail) {
+                document.getElementById('user-name').textContent = userEmail;
+                document.getElementById('user-avatar').textContent = userEmail.charAt(0).toUpperCase();
+            }
+        });
+    </script>
+</body>
+
+</html>
