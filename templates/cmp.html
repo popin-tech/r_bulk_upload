@@ -25,7 +25,7 @@
             <div class="user-profile">
                 <div class="user-avatar" id="user-avatar">U</div>
                 <div class="user-info">
-                    <div class="user-name" id="user-name">User</div>
+                    <div class="user-name" id="user-name">{{ session.get('user', {}).get('name', 'User') }}</div>
                 </div>
             </div>
             <button onclick="logout()" class="logout-btn">

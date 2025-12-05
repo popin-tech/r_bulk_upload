@@ -6,7 +6,7 @@ from dataclasses import asdict
 from typing import Any, Dict
 from openpyxl import Workbook
 
-from flask import Flask, jsonify, request, send_from_directory, render_template, send_file, session, redirect, url_for
+from flask import Flask, jsonify, request, send_from_directory, render_template, send_file, Response, session, redirect, url_for
 
 from services.auth import AuthError, GoogleUser, verify_google_token
 from services.broadciel_client import BroadcielClient
@@ -94,15 +94,21 @@ def _get_token_from_header() -> str:
 
 
 def _require_user() -> GoogleUser:
-    # 1. Try session first (Preferred)
+    # 1. Check Flask Session first
     if "user" in session:
         user_data = session["user"]
-        return GoogleUser(**user_data)
+        # Reconstruct GoogleUser from session dict
+        return GoogleUser(
+            email=user_data.get("email"),
+            name=user_data.get("name"),
+            sub=user_data.get("sub"),
+            picture=user_data.get("picture")
+        )
 
-    # 2. Fallback to Bearer token (Legacy/API support)
+    # 2. Check Authorization Header (API access)
     token = _get_token_from_header()
     if not token:
-        return _error("Authentication required.", 401)
+         return _error("No session or token provided.", 401)
 
     try:
         user = verify_google_token(token, app.config["GOOGLE_CLIENT_ID"])
@@ -173,7 +179,36 @@ def list_accounts():
     ]
     return jsonify({"accounts": emails})
 
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    """Exchange Google ID token for a server-side session."""
+    data = request.get_json() or {}
+    token = data.get("token")
+    if not token:
+        return _error("Missing token", 400)
 
+    try:
+        user = verify_google_token(token, app.config["GOOGLE_CLIENT_ID"])
+    except AuthError as exc:
+        return _error(str(exc), 401)
+
+    # Check allowlist
+    email = (user.email or "").lower()
+    allowed_emails = _load_allowed_emails()
+    if email not in allowed_emails:
+        return _error("You are not authorized to use this app.", 403)
+
+    # Create Session
+    session["user"] = asdict(user)
+    session.permanent = True  # Optional: make session persist
+    
+    return jsonify({"status": "ok", "user": session["user"]})
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify({"status": "ok"})
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
