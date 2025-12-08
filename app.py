@@ -262,22 +262,38 @@ def upload_preview():
 
 @app.route("/api/commit", methods=["POST"])
 def commit():
+    # 1) auth
     user = _require_user()
     if not isinstance(user, GoogleUser):
         return user
 
-    payload: Dict[str, Any] = request.get_json() or {}
-    changes = payload.get("changes")
-    if not changes:
-        return _error("Missing changes payload.", 400)
+    # 2) get excel file
+    upload = request.files.get("file")
+    if upload is None or upload.filename == "":
+        return _error("No Excel file uploaded.", 400)
 
-    client = _broadciel_client()
     try:
-        response = client.upsert_campaigns({"changes": changes})
-    except Exception as exc:  # pragma: no cover - upstream error surface
-        return _error(f"Broadciel API error: {exc}", 502)
+        # 3) read bytes
+        file_bytes = upload.read()
 
-    return jsonify({"result": response, "committed_by": asdict(user)})
+        # 4) full DataFrame
+        df = parse_excel_df(file_bytes)
+
+        # 5) to JSON (campaign only)
+        campaign_payload = excel_to_campaign_json(df)
+        app.logger.info("=== Campaign JSON Parsed ===")
+        app.logger.info(campaign_payload)   # Cloud Run logs
+        print("=== Campaign JSON Parsed ===")
+        print(campaign_payload)
+
+    except UploadParsingError as exc:
+        return _error(str(exc), 400)
+    except Exception as exc:
+        return _error(f"Unexpected error: {exc}", 500)
+    return jsonify({
+        "status": "ok",
+        "campaign": campaign_payload["campaign"]
+    })
 
 
 if app.config.get("ENABLE_FRONTEND", False):
