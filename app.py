@@ -130,6 +130,13 @@ def _broadciel_client() -> BroadcielClient:
 
 
 def _error(message: str, status: int):
+    payload = {"error": message}
+    data = json.dumps(payload, ensure_ascii=False)
+    return Response(
+        response=data,
+        status=status,
+        mimetype="application/json; charset=utf-8",
+    )
     response = jsonify({"error": message})
     response.status_code = status
     return response
