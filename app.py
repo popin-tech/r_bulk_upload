@@ -186,36 +186,6 @@ def list_accounts():
     ]
     return jsonify({"accounts": emails})
 
-@app.route("/api/login", methods=["POST"])
-def api_login():
-    """Exchange Google ID token for a server-side session."""
-    data = request.get_json() or {}
-    token = data.get("token")
-    if not token:
-        return _error("Missing token", 400)
-
-    try:
-        user = verify_google_token(token, app.config["GOOGLE_CLIENT_ID"])
-    except AuthError as exc:
-        return _error(str(exc), 401)
-
-    # Check allowlist
-    email = (user.email or "").lower()
-    allowed_emails = _load_allowed_emails()
-    if email not in allowed_emails:
-        return _error("You are not authorized to use this app.", 403)
-
-    # Create Session
-    session["user"] = asdict(user)
-    session.permanent = True  # Optional: make session persist
-    
-    return jsonify({"status": "ok", "user": session["user"]})
-
-
-@app.route("/api/logout", methods=["POST"])
-def api_logout():
-    session.clear()
-    return jsonify({"status": "ok"})
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
