@@ -11,6 +11,7 @@ from flask import Flask, jsonify, request, send_from_directory, render_template,
 from services.auth import AuthError, GoogleUser, verify_google_token
 from services.broadciel_client import BroadcielClient
 from services.upload_service import UploadParsingError, parse_excel
+from services.campaign_bulk_processor import CampaignBulkProcessor
 
 app = Flask(__name__)
 
@@ -21,7 +22,7 @@ app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
 app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
 app.config["BROADCIEL_API_BASE_URL"] = os.getenv(
     "BROADCIEL_API_BASE_URL",
-    "https://broadciel.console.rixbeedesk.com/api/ads/v2",
+    "https://broadciel.console.rixbeedesk.com/api/v2",
 )
 app.config["BROADCIEL_API_KEY"] = os.getenv("BROADCIEL_API_KEY", "")
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "20")) * 1024 * 1024
@@ -196,6 +197,189 @@ def commit():
         return _error(f"Broadciel API error: {exc}", 502)
 
     return jsonify({"result": response, "committed_by": asdict(user)})
+
+
+
+# 測試用可刪除 - 單純測試 Campaign API
+@app.route("/api/test-single-campaign", methods=["GET"])  
+def test_single_campaign():
+    """測試用可刪除 - 測試單個 Campaign 創建（無需認證）"""
+    # 測試用可刪除 - 跳過認證檢查，方便直接用瀏覽器測試
+    # user = _require_user()
+    # if not isinstance(user, GoogleUser):
+    #     return user
+        
+    # 測試用可刪除 - 單一 Campaign 測試資料
+    test_campaign_data = {
+        "cpg_name": "test_campaign_2",   # 廣告活動名稱
+            "day_budget": 0.01,                  # 你之後可從 Excel 帶入
+            "app": {
+                "ad_platform": 1,                # R 平台固定值
+                "ad_target": "12345"             # 可從 Excel 帶入
+            },
+            "adomain": "example.com",            # 廣告主 domain，由你決定
+            "sponsored": "ad_group_name",  # 看起來比較像「贊助來源」欄位
+            "ad_channel": 1 
+    }
+    
+    test_api_token = "U2FsdGVkX18Mia3m6wmozC76iVv8PAlUqHmKjyPmemEriK2voFBZPhH9mfnjFwUtxeNe49pqJNkANXskJcn+TDWHxEBCHOfmzIZvucUQUotflVNbc6wCwv4Qm9dKK+jY+Q5nLKqBKGS+6kSvOiJSBGBt4682bUm7YUejqTuEvUMYW/3jB/QzNxlTBO38EsXY6sX3XTJfGGQjXzs8D2Kl4P1ZPD5Aog6okNkB7beHJOhfD3zLptKQyTV4yxAD/MKCqGolPhefq7cb9LGFrPaMIs0ne5cdJuaKIgdEP0FGAEY="
+    
+    client = _broadciel_client()
+    try:
+        # 測試用可刪除 - 直接呼叫 create_campaign
+        campaign_id = client.create_campaign(test_campaign_data, test_api_token) 
+        
+        return jsonify({
+            "status": "test_success",
+            "message": "測試用可刪除 - 單一 Campaign 創建成功",
+            "campaign_id": campaign_id,
+            "test_data": test_campaign_data
+        })
+        
+    except Exception as exc:
+        return jsonify({
+            "status": "test_error",
+            "message": "測試用可刪除 - 單一 Campaign 創建失敗", 
+            "error": str(exc),
+            "test_data": test_campaign_data
+        })
+
+
+# 測試用可刪除 - 單純測試 Ad Group API
+@app.route("/api/test-single-ad-group", methods=["GET"])  
+def test_single_ad_group():
+    """測試用可刪除 - 測試單個 Ad Group 創建（無需認證）"""
+    # 測試用可刪除 - 跳過認證檢查，方便直接用瀏覽器測試
+    # user = _require_user()
+    # if not isinstance(user, GoogleUser):
+    #     return user
+        
+    # 測試用可刪除 - 單一 Ad Group 測試資料
+    test_ad_group_data = {
+        "cpg_id": 87779,
+        "group_name": "test_benson1208-03",
+        "target_info": "https://wellness.tw/contents/0003/test",
+        "click_url": [
+            "https://example.com/"
+        ],
+        "impression_url": [
+            {
+                "type": 1,
+                "value": "https://example.com"
+            }
+        ],
+        "budget": {
+            "market_target": 1,
+            "rev_type": 3,
+            "price": 0.16,
+            "day_budget": 10,
+            "conversion_goal": {
+                "type": 0,
+                "target_value": 1,
+                "convert_event": 0
+            }
+        },
+        "schedule": {
+            "start_date": "",
+            "end_date": "",
+            "week_days": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7
+            ],
+            "hours": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23
+            ]
+        },
+        "location": {
+            "country": [
+                "TWN"
+            ],
+            "country_type": 1
+        },
+        "audience_target": {
+            "device_type": [],
+            "traffic_type": [],
+            "platform": [],
+            "browser": [],
+            "age": [],
+            "gender": [],
+            # "os_version": {
+            #     "min": 16,
+            #     "max": 16
+            # },
+            "ip": {
+                "id": 0,
+                "type": 1
+            },
+            "site": {
+                "id": 0,
+                "type": 1
+            },
+            "category": {
+                "value": [
+                    "IAB1"
+                ],
+                "type": 1
+            },
+            "keywords": {
+                "value": [
+                    "棒棒"
+                ],
+                "type": 1
+            },
+            "pixel_audience": []
+        }
+    }
+    
+    test_api_token = "U2FsdGVkX1+2iGWq/7iDuuv7GIifk+uUwHVN2gKTuh4ZMx2ny6aEo+1FUgIDpmzmb2BfRnVcpIJJQlQjgtVjDzz2pVe5XmEZtqUtCtYugCe46rebgJ23fejjx7OcRviu6NKVZOX+gxsVvv1uV/dKkCbUUZrCRx6gbjRfz5a850eboiAA1D78XZ8pJS5686A6dKzbF9b1dsCkGVZsPov3+TQPznQhVYJK/qnpvuqn3VXDZ3jWAJhEpHbQUtTkMdVaiMArggwDdiAiu71YF0ZUM+o9MrSFRGUxwhcr6La+rIk="
+    
+    client = _broadciel_client()
+    try:
+        # 測試用可刪除 - 直接呼叫 create_ad_group
+        ad_group_id = client.create_ad_group(test_ad_group_data, test_api_token) 
+        
+        return jsonify({
+            "status": "test_success",
+            "message": "測試用可刪除 - 單一 Ad Group 創建成功",
+            "ad_group_id": ad_group_id,
+            "test_data": test_ad_group_data
+        })
+        
+    except Exception as exc:
+        return jsonify({
+            "status": "test_error",
+            "message": "測試用可刪除 - 單一 Ad Group 創建失敗", 
+            "error": str(exc),
+            "test_data": test_ad_group_data
+        })
 
 
 if app.config.get("ENABLE_FRONTEND", False):
