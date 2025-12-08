@@ -310,6 +310,13 @@ if (commitButton) {
       return;
     }
 
+    const fileInput = uploadForm?.querySelector('input[type="file"]');
+    const file = fileInput?.files?.[0];
+    if (!file) {
+      alert("Please choose an Excel file again before committing.");
+      return;
+    }
+
     let accountEmail = "";
     if (accountSelect) {
       accountEmail = accountSelect.value;
@@ -323,17 +330,20 @@ if (commitButton) {
     }
 
     commitButton.disabled = true;
+    commitButton.textContent = "Syncing...";
     try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (accountEmail) {
+        formData.append("account_email", accountEmail);
+      }
+
       const response = await fetch("/api/commit", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({
-          changes: lastPreview.rows,
-          account_email: accountEmail || undefined,
-        }),
+        body: formData,
       });
       console.log("[commitButton] /api/commit status:", response.status);
       if (!response.ok) {
@@ -345,6 +355,7 @@ if (commitButton) {
       alert(`Commit failed: ${error}`);
     } finally {
       commitButton.disabled = false;
+      commitButton.textContent = "Confirm & Sync";
     }
   });
 } else {
