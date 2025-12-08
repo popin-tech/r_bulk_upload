@@ -10,7 +10,7 @@ from flask import Flask, jsonify, request, send_from_directory, render_template,
 
 from services.auth import AuthError, GoogleUser, verify_google_token
 from services.broadciel_client import BroadcielClient
-from services.upload_service import UploadParsingError, parse_excel
+from services.upload_service import UploadParsingError, parse_excel, parse_excel_df, excel_to_campaign_json
 
 app = Flask(__name__)
 
