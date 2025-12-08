@@ -6,12 +6,14 @@ from dataclasses import asdict
 from typing import Any, Dict
 from openpyxl import Workbook
 
-from flask import Flask, jsonify, request, send_from_directory, render_template, send_file
+from flask import Flask, jsonify, request, send_from_directory, render_template, send_file, Response
 
 from services.auth import AuthError, GoogleUser, verify_google_token
 from services.broadciel_client import BroadcielClient
-from services.upload_service import UploadParsingError, parse_excel
+
+from services.upload_service import UploadParsingError, parse_excel, parse_excel_df, excel_to_campaign_json
 from services.campaign_bulk_processor import CampaignBulkProcessor
+
 
 app = Flask(__name__)
 
@@ -115,9 +117,13 @@ def _broadciel_client() -> BroadcielClient:
 
 
 def _error(message: str, status: int):
-    response = jsonify({"error": message})
-    response.status_code = status
-    return response
+    payload = {"error": message}
+    data = json.dumps(payload, ensure_ascii=False)
+    return Response(
+        response=data,
+        status=status,
+        mimetype="application/json; charset=utf-8",
+    )
 
 
 @app.route("/api/accounts", methods=["GET"])
@@ -181,22 +187,38 @@ def upload_preview():
 
 @app.route("/api/commit", methods=["POST"])
 def commit():
+    # 1) auth
     user = _require_user()
     if not isinstance(user, GoogleUser):
         return user
 
-    payload: Dict[str, Any] = request.get_json() or {}
-    changes = payload.get("changes")
-    if not changes:
-        return _error("Missing changes payload.", 400)
+    # 2) get excel file
+    upload = request.files.get("file")
+    if upload is None or upload.filename == "":
+        return _error("No Excel file uploaded.", 400)
 
-    client = _broadciel_client()
     try:
-        response = client.upsert_campaigns({"changes": changes})
-    except Exception as exc:  # pragma: no cover - upstream error surface
-        return _error(f"Broadciel API error: {exc}", 502)
+        # 3) read bytes
+        file_bytes = upload.read()
 
-    return jsonify({"result": response, "committed_by": asdict(user)})
+        # 4) full DataFrame
+        df = parse_excel_df(file_bytes)
+
+        # 5) to JSON (campaign only)
+        campaign_payload = excel_to_campaign_json(df)
+        app.logger.info("=== Campaign JSON Parsed ===")
+        app.logger.info(campaign_payload)   # Cloud Run logs
+        print("=== Campaign JSON Parsed ===")
+        print(campaign_payload)
+
+    except UploadParsingError as exc:
+        return _error(str(exc), 400)
+    except Exception as exc:
+        return _error(f"Unexpected error: {exc}", 500)
+    return jsonify({
+        "status": "ok",
+        "campaign": campaign_payload["campaign"]
+    })
 
 
 
