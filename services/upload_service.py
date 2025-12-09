@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 
 import pandas as pd
 
 
 class UploadParsingError(RuntimeError):
     pass
+
 
 def parse_excel_df(file_bytes: bytes) -> pd.DataFrame:
     try:
@@ -233,10 +234,23 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         #
         budget: Dict[str, Any] = group.setdefault("budget", {})
 
-        # 行銷目標 → market_goal
-        marketing_goal = _get_optional_str(row, "行銷目標")
-        if marketing_goal:
-            budget["market_goal"] = marketing_goal
+        # 行銷目標 → market_target
+        market_target = _get_optional_str(row, "行銷目標")
+        if market_target:
+            budget["market_target"] = market_target
+            goal_map = {
+                "品牌知名度": 1,
+                "電商網上購買": 2,
+                "增加網站流量": 4,
+                "開發潛在客戶": 5,
+                "網站互動": 6,
+            }
+            code = goal_map.get(market_target)
+            if code is None:
+                raise UploadParsingError(
+                    f"Row {excel_row_num}: 不支援的行銷目標「{marketing_goal}」，請確認是否拼寫正確。"
+                )
+            budget["market_target"] = code
 
         # 計費模式 → rev_type
         billing_type = _get_optional_str(row, "計費模式")
@@ -400,7 +414,6 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         # NOTE: pixel_audience1 / pixel_audience2 暫時不輸出到 JSON
 
     return {"campaign": list(campaigns.values())}
-
 
 def dataframe_preview(df: pd.DataFrame, limit: int = 50) -> Dict[str, object]:
     rows = df.fillna("").astype(str).head(limit).to_dict(orient="records")
