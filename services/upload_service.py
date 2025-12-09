@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from io import BytesIO
 from typing import Any, Dict, List, Optional
-from datetime import datetime
-
 
 import pandas as pd
 
@@ -23,37 +21,6 @@ def parse_excel_df(file_bytes: bytes) -> pd.DataFrame:
 
     return df
 
-def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str:
-    if not value:
-        return value
-
-    # 若 Excel 讀入是 timestamp / datetime 物件
-    if isinstance(value, (datetime, pd.Timestamp)):
-        return value.strftime("%Y-%m-%d %H")
-
-    s = value.strip()
-
-    # 正規 YYYY-MM-DD HH
-    try:
-        parsed = datetime.strptime(s, "%Y-%m-%d %H")
-        return parsed.strftime("%Y-%m-%d %H")
-    except Exception:
-        pass
-
-    # 若使用者輸入 yyyy/mm/dd hh, yyyy.mm.dd hh 也自動修正
-    for sep in ["/", "."]:
-        if sep in s:
-            s_fixed = s.replace(sep, "-")
-            try:
-                parsed = datetime.strptime(s_fixed, "%Y-%m-%d %H")
-                return parsed.strftime("%Y-%m-%d %H")
-            except Exception:
-                break
-
-    # 都不符合 → 拋錯
-    raise UploadParsingError(
-        f"Row {excel_row_num}: 欄位「{field}」格式錯誤，必須為 yyyy-mm-dd hh，例如：2025-12-10 08"
-    )
 
 def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
     """
@@ -269,19 +236,7 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         # 行銷目標 → market_goal
         marketing_goal = _get_optional_str(row, "行銷目標")
         if marketing_goal:
-            market_target_map = {
-                "品牌知名度": 1,
-                "電商網上購買": 2,
-                "增加網站流量": 3,
-                "開發潛在客戶": 5,
-                "網站互動": 6,
-            }
-            market_target = market_target_map.get(marketing_goal)
-            if market_target is None:
-                raise UploadParsingError(
-                    f"Row {excel_row_num}: 不支援的行銷目標「{marketing_goal}」，請確認是否拼寫正確。"
-                )
-            budget["market_target"] = market_target
+            budget["market_goal"] = marketing_goal
 
         # 計費模式 → rev_type
         billing_type = _get_optional_str(row, "計費模式")
@@ -307,56 +262,11 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
 
         conversion_goal: Dict[str, Any] = {}
         if depth_goal is not None:
-            #conversion_goal["conversion_goal"] = depth_goal
-            goal_type_map = {
-                "帳戶預設設定": 0,
-                "所有轉換": 1,
-                "指定轉換目標": 2,
-            }
-            t = goal_type_map.get(depth_goal)
-            if t is None:
-                raise UploadParsingError(
-                    f"Row {excel_row_num}: 不支援的深度轉換目標「{depth_goal}」，請確認是否拼寫正確。"
-                )
-            conversion_goal["type"] = t
-            if t == 1 and conv_value is None:
-                raise UploadParsingError(
-                    f"Row {excel_row_num}: 深度轉換目標為「所有轉換」時，必須填寫『轉換價值』。"
-                )
-            if t == 2:
-                missing = []
-                if conv_value is None:
-                    missing.append("轉換價值")
-                if conv_goal is None:
-                    missing.append("轉化目標")
-                if missing:
-                    raise UploadParsingError(
-                        f"Row {excel_row_num}: 深度轉換目標為「指定轉換目標」時，必須填寫「{'、'.join(missing)}」。"
-                    )
-
+            conversion_goal["conversion_goal"] = depth_goal
         if conv_value is not None:
             conversion_goal["target_value"] = conv_value
-        else:
-            conversion_goal["target_value"] = 0
         if conv_goal is not None:
-            conv_goal_map = {
-            "點擊數": 11,
-            "網頁瀏覽": 13,
-            "完成註冊": 6,
-            "搜尋": 5,
-            "收藏": 3,
-            "加入購物車": 4,
-            "開始結帳": 2,
-            "完成結帳": 1
-            }
-            cg = conv_goal_map.get(conv_goal)
-            if cg is None:
-                raise UploadParsingError(
-                    f"Row {excel_row_num}: 不支援的轉換目標「{conv_goal}」，請確認是否拼寫正確。"
-                )
-            conversion_goal["convert_event"] = cg
-        else:
-            conversion_goal["convert_event"] = 0
+            conversion_goal["convert_event"] = conv_goal
 
         if conversion_goal:
             budget["conversion_goal"] = conversion_goal
@@ -367,15 +277,11 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         schedule: Dict[str, Any] = group.setdefault("schedule", {})
 
         # 開始日期 / 結束日期
-        start_date_raw = row.get("開始日期")
-        end_date_raw = row.get("結束日期")
-
-        if start_date_raw:
-            start_date = _validate_datetime_format(str(start_date_raw), excel_row_num, "開始日期")
+        start_date = _get_optional_str(row, "開始日期")  # → start_date
+        end_date = _get_optional_str(row, "結束日期")  # → end_date
+        if start_date:
             schedule["start_date"] = start_date
-
-        if end_date_raw:
-            end_date = _validate_datetime_format(str(end_date_raw), excel_row_num, "結束日期")
+        if end_date:
             schedule["end_date"] = end_date
 
         # 投放星期數 → week_days
@@ -415,23 +321,7 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         # 設備類型 → device_type
         device_types = _split_list(row.get("設備類型"))
         if device_types:
-            device_types_map = {
-                "行動端": 1,
-                "電腦端": 2,
-                "電視設備": 3,
-                "平板電腦設備": 4,
-                "物聯網設備": 5,
-                "機上盒": 7,
-            }
-            mapped_devices: List[int] = []
-            for token in device_types:
-                dev_t = device_types_map.get(token)
-                if dev_t is None:
-                    raise UploadParsingError(
-                        f"Row {excel_row_num}: 不支援的設備類型「{token}」，請確認是否拼寫正確。"
-                    )
-                mapped_devices.append(dev_t)
-            audience["device_type"] = mapped_devices
+            audience["device_type"] = device_types
 
         # 流量類型 → traffic_type
         traffic_types = _split_list(row.get("流量類型"))
