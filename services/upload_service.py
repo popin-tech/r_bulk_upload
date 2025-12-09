@@ -9,8 +9,7 @@ import pandas as pd
 class UploadParsingError(RuntimeError):
     pass
 
-<<<<<<< Updated upstream
-=======
+
 def parse_excel_df(file_bytes: bytes) -> pd.DataFrame:
     try:
         df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
