@@ -187,6 +187,7 @@ def list_accounts():
     ]
     return jsonify({"accounts": emails})
 
+
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
