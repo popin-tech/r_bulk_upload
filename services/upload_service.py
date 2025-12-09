@@ -416,7 +416,20 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         # 設備類型 → device_type
         device_types = _split_list(row.get("設備類型"))
         if device_types:
-            audience["device_type"] = device_types
+            device_types_map = {
+            "行動端":1,
+            "電腦端":2,
+            "電視設備":3,
+            "平板電腦設備":4,
+            "物聯網設備":5,
+            "機上盒":7
+            }
+            dev_t = device_types_map.get(device_types)
+            if dev_t is None:
+                raise UploadParsingError(
+                    f"Row {excel_row_num}: 不支援的設備類型「{device_types}」，請確認是否拼寫正確。"
+                )
+            audience["device_type"] = dev_t
 
         # 流量類型 → traffic_type
         traffic_types = _split_list(row.get("流量類型"))
