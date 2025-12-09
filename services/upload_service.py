@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from typing import Dict, List
+from datetime import datetime
 
 import pandas as pd
 
@@ -22,6 +23,37 @@ def parse_excel_df(file_bytes: bytes) -> pd.DataFrame:
 
     return df
 
+def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str:
+    if not value:
+        return value
+
+    # 若 Excel 讀入是 timestamp / datetime 物件
+    if isinstance(value, (datetime, pd.Timestamp)):
+        return value.strftime("%Y-%m-%d %H")
+
+    s = value.strip()
+
+    # 正規 YYYY-MM-DD HH
+    try:
+        parsed = datetime.strptime(s, "%Y-%m-%d %H")
+        return parsed.strftime("%Y-%m-%d %H")
+    except Exception:
+        pass
+
+    # 若使用者輸入 yyyy/mm/dd hh, yyyy.mm.dd hh 也自動修正
+    for sep in ["/", "."]:
+        if sep in s:
+            s_fixed = s.replace(sep, "-")
+            try:
+                parsed = datetime.strptime(s_fixed, "%Y-%m-%d %H")
+                return parsed.strftime("%Y-%m-%d %H")
+            except Exception:
+                break
+
+    # 都不符合 → 拋錯
+    raise UploadParsingError(
+        f"Row {excel_row_num}: 欄位「{field}」格式錯誤，必須為 yyyy-mm-dd hh，例如：2025-12-10 08"
+    )
 
 def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
     """
@@ -276,11 +308,56 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
 
         conversion_goal: Dict[str, Any] = {}
         if depth_goal is not None:
-            conversion_goal["conversion_goal"] = depth_goal
+            #conversion_goal["conversion_goal"] = depth_goal
+            goal_type_map = {
+                "帳戶預設設定": 0,
+                "所有轉換": 1,
+                "指定轉換目標": 2,
+            }
+            t = goal_type_map.get(depth_goal)
+            if t is None:
+                raise UploadParsingError(
+                    f"Row {excel_row_num}: 不支援的深度轉換目標「{depth_goal}」，請確認是否拼寫正確。"
+                )
+            conversion_goal["type"] = t
+            if t == 1 and conv_value is None:
+                raise UploadParsingError(
+                    f"Row {excel_row_num}: 深度轉換目標為「所有轉換」時，必須填寫『轉換價值』。"
+                )
+            if t == 2:
+                missing = []
+                if conv_value is None:
+                    missing.append("轉換價值")
+                if conv_goal is None:
+                    missing.append("轉化目標")
+                if missing:
+                    raise UploadParsingError(
+                        f"Row {excel_row_num}: 深度轉換目標為「指定轉換目標」時，必須填寫「{'、'.join(missing)}」。"
+                    )
+
         if conv_value is not None:
             conversion_goal["target_value"] = conv_value
+        else:
+            conversion_goal["target_value"] = 0
         if conv_goal is not None:
-            conversion_goal["convert_event"] = conv_goal
+            conv_goal_map = {
+            "點擊數": 11,
+            "網頁瀏覽": 13,
+            "完成註冊": 6,
+            "搜尋": 5,
+            "收藏": 3,
+            "加入購物車": 4,
+            "開始結帳": 2,
+            "完成結帳": 1
+            }
+            cg = conv_goal_map.get(conv_goal)
+            if cg is None:
+                raise UploadParsingError(
+                    f"Row {excel_row_num}: 不支援的轉換目標「{conv_goal}」，請確認是否拼寫正確。"
+                )
+            conversion_goal["convert_event"] = cg
+        else:
+            conversion_goal["convert_event"] = 0
 
         if conversion_goal:
             budget["conversion_goal"] = conversion_goal
@@ -291,11 +368,15 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         schedule: Dict[str, Any] = group.setdefault("schedule", {})
 
         # 開始日期 / 結束日期
-        start_date = _get_optional_str(row, "開始日期")  # → start_date
-        end_date = _get_optional_str(row, "結束日期")  # → end_date
-        if start_date:
+        start_date_raw = row.get("開始日期")
+        end_date_raw = row.get("結束日期")
+
+        if start_date_raw:
+            start_date = _validate_datetime_format(str(start_date_raw), excel_row_num, "開始日期")
             schedule["start_date"] = start_date
-        if end_date:
+
+        if end_date_raw:
+            end_date = _validate_datetime_format(str(end_date_raw), excel_row_num, "結束日期")
             schedule["end_date"] = end_date
 
         # 投放星期數 → week_days
