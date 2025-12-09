@@ -305,14 +305,15 @@ if (uploadForm) {
 if (commitButton) {
   commitButton.addEventListener("click", async () => {
     console.log("[commitButton] click");
-
-    if (!idToken) {
-      alert("Please sign in first.");
+    if (!lastPreview) {
+      alert("No preview data to commit.");
       return;
     }
 
-    if (!lastPreview) {
-      alert("No preview data to commit.");
+    const fileInput = uploadForm?.querySelector('input[type="file"]');
+    const file = fileInput?.files?.[0];
+    if (!file) {
+      alert("Please choose an Excel file again before committing.");
       return;
     }
 
@@ -328,44 +329,33 @@ if (commitButton) {
       console.warn("[commitButton] accountSelect not found");
     }
 
-    // 從同一個上傳 form 拿檔案
-    const fileInput = uploadForm.querySelector('input[type="file"]');
-    const file = fileInput?.files?.[0];
-    if (!file) {
-      alert("Please choose an Excel file before committing.");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("account_email", accountEmail);
-
     commitButton.disabled = true;
-
+    commitButton.textContent = "Syncing...";
     try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (accountEmail) {
+        formData.append("account_email", accountEmail);
+      }
+
       const response = await fetch("/api/commit", {
         method: "POST",
         headers: {
-          // 不要自己設 Content-Type，讓瀏覽器自動帶 multipart/form-data
           Authorization: `Bearer ${idToken}`,
         },
         body: formData,
       });
-
       console.log("[commitButton] /api/commit status:", response.status);
-
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text);
+        throw new Error(await response.text());
       }
-
-      // 這裡你現在只回 {"status": "ok"}，就簡單 alert 一下
-      alert("Commit request sent. Check backend logs for parsed JSON.");
+      alert("Changes sent to Broadciel.");
     } catch (error) {
       console.error("[commitButton] Commit failed:", error);
-      alert(`Commit failed: ${error.message || error}`);
+      alert(`Commit failed: ${error}`);
     } finally {
       commitButton.disabled = false;
+      commitButton.textContent = "Confirm & Sync";
     }
   });
 } else {
