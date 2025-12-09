@@ -305,15 +305,14 @@ if (uploadForm) {
 if (commitButton) {
   commitButton.addEventListener("click", async () => {
     console.log("[commitButton] click");
-    if (!lastPreview) {
-      alert("No preview data to commit.");
+
+    if (!idToken) {
+      alert("Please sign in first.");
       return;
     }
 
-    const fileInput = uploadForm?.querySelector('input[type="file"]');
-    const file = fileInput?.files?.[0];
-    if (!file) {
-      alert("Please choose an Excel file again before committing.");
+    if (!lastPreview) {
+      alert("No preview data to commit.");
       return;
     }
 
@@ -329,33 +328,44 @@ if (commitButton) {
       console.warn("[commitButton] accountSelect not found");
     }
 
-    commitButton.disabled = true;
-    commitButton.textContent = "Syncing...";
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (accountEmail) {
-        formData.append("account_email", accountEmail);
-      }
+    // 從同一個上傳 form 拿檔案
+    const fileInput = uploadForm.querySelector('input[type="file"]');
+    const file = fileInput?.files?.[0];
+    if (!file) {
+      alert("Please choose an Excel file before committing.");
+      return;
+    }
 
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("account_email", accountEmail);
+
+    commitButton.disabled = true;
+
+    try {
       const response = await fetch("/api/commit", {
         method: "POST",
         headers: {
+          // 不要自己設 Content-Type，讓瀏覽器自動帶 multipart/form-data
           Authorization: `Bearer ${idToken}`,
         },
         body: formData,
       });
+
       console.log("[commitButton] /api/commit status:", response.status);
+
       if (!response.ok) {
-        throw new Error(await response.text());
+        const text = await response.text();
+        throw new Error(text);
       }
-      alert("Changes sent to Broadciel.");
+
+      // 這裡你現在只回 {"status": "ok"}，就簡單 alert 一下
+      alert("Commit request sent. Check backend logs for parsed JSON.");
     } catch (error) {
       console.error("[commitButton] Commit failed:", error);
-      alert(`Commit failed: ${error}`);
+      alert(`Commit failed: ${error.message || error}`);
     } finally {
       commitButton.disabled = false;
-      commitButton.textContent = "Confirm & Sync";
     }
   });
 } else {
