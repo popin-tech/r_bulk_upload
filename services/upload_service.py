@@ -415,8 +415,6 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
 
     return {"campaign": list(campaigns.values())}
 
->>>>>>> Stashed changes
-
 def dataframe_preview(df: pd.DataFrame, limit: int = 50) -> Dict[str, object]:
     rows = df.fillna("").astype(str).head(limit).to_dict(orient="records")
     return {
