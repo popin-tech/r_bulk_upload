@@ -453,6 +453,49 @@ def test_single_ad_group():
         })
 
 
+# 測試用可刪除 - 單純測試 Ad Creative API
+@app.route("/api/test-single-ad-creative", methods=["GET"])  
+def test_single_ad_creative():
+    """測試用可刪除 - 測試單個 Ad Creative 創建（無需認證）"""
+    # 測試用可刪除 - 跳過認證檢查，方便直接用瀏覽器測試
+    # user = _require_user()
+    # if not isinstance(user, GoogleUser):
+    #     return user
+        
+    # 測試用可刪除 - 單一 Ad Creative 測試資料
+    test_ad_creative_data = {
+        "group_id": 95272,
+        "cr_name": "test_creative_benson1210",
+        "cr_title": "測試廣告創意標題",
+        "cr_desc": "測試廣告創意描述內容",
+        "cr_btn_text": "立即下載",
+        "iab": "IAB1",
+        "cr_mt_id": 28575
+    }
+    
+    test_api_token = "U2FsdGVkX1+atmcs9/XLTTvV+BXBL3s8fE30HE8uxlWUokXigx+ZodKV7lcejU1kAACEziu0aOFwgZcvopUrkBQ1MEtXhRvlFyfq4s8oCfoQsMloNAdHGkVZFaii+yllkVqCCBeM08xw7yPWxf2i9sIS713MXxYKJgHf+pM3AmbtyiwjZr4enQXpVXIWGAG1A0CZ2tQw82vI50Y8iRrZMWAGegOogONnEnIpGsUWQ2iHjZVtKtyX+5d3hrLA37tQzBnU4m9IRrrm9Vnr6B0mvlNkr7bjnf2YfxFVGJcNaHM="
+    
+    client = _broadciel_client()
+    try:
+        # 測試用可刪除 - 直接呼叫 create_creative
+        creative_id = client.create_creative(test_ad_creative_data, test_api_token) 
+        
+        return jsonify({
+            "status": "test_success",
+            "message": "測試用可刪除 - 單一 Ad Creative 創建成功",
+            "creative_id": creative_id,
+            "test_data": test_ad_creative_data
+        })
+        
+    except Exception as exc:
+        return jsonify({
+            "status": "test_error",
+            "message": "測試用可刪除 - 單一 Ad Creative 創建失敗", 
+            "error": str(exc),
+            "test_data": test_ad_creative_data
+        })
+
+
 if app.config.get("ENABLE_FRONTEND", False):
     @app.route("/")
     def index():

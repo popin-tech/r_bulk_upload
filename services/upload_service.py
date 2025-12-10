@@ -371,12 +371,18 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         end_date_raw = row.get("結束日期")
 
         if start_date_raw:
-            start_date = _validate_datetime_format(str(start_date_raw), excel_row_num, "開始日期")
-            schedule["start_date"] = start_date
+            if pd.isna(start_date_raw) or str(start_date_raw).strip() == "":
+                schedule["start_date"] = ""
+            else:
+                start_date = _validate_datetime_format(str(start_date_raw), excel_row_num, "開始日期")
+                schedule["start_date"] = start_date
 
         if end_date_raw:
-            end_date = _validate_datetime_format(str(end_date_raw), excel_row_num, "結束日期")
-            schedule["end_date"] = end_date
+            if pd.isna(end_date_raw) or str(end_date_raw).strip() == "":
+                schedule["end_date"] = ""
+            else:
+                end_date = _validate_datetime_format(str(end_date_raw), excel_row_num, "結束日期")
+                schedule["end_date"] = end_date
 
         # 投放星期數 → week_days
         week_days_raw = row.get("投放星期數")
