@@ -396,12 +396,17 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         location: Dict[str, Any] = group.setdefault("location", {})
         # 地理位置 → country_type
         country_type_raw = _get_optional_str(row, "地理位置")
-        if country_type_raw is not None:
-            try:
-                location["country_type"] = int(country_type_raw)
-            except Exception:
-                location["country_type"] = country_type_raw
-
+        if country_type_raw:
+            country_type_map = {
+                "包含": 1,
+                "不包含": 2
+            }
+            country_type = country_type_map.get(country_type_raw)
+            if country_type is None:
+                raise UploadParsingError(
+                    f"Row {excel_row_num}: 不支援的地理位置「{country_type_raw}」，請確認是否拼寫正確。"
+                )
+            location["country_type"] = country_type
         # 國家 → country
         country = _split_list(row.get("國家"))
         if country:
@@ -415,23 +420,7 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         # 設備類型 → device_type
         device_types = _split_list(row.get("設備類型"))
         if device_types:
-            device_types_map = {
-                "行動端": 1,
-                "電腦端": 2,
-                "電視設備": 3,
-                "平板電腦設備": 4,
-                "物聯網設備": 5,
-                "機上盒": 7,
-            }
-            mapped_devices: List[int] = []
-            for token in device_types:
-                dev_t = device_types_map.get(token)
-                if dev_t is None:
-                    raise UploadParsingError(
-                        f"Row {excel_row_num}: 不支援的設備類型「{token}」，請確認是否拼寫正確。"
-                    )
-                mapped_devices.append(dev_t)
-            audience["device_type"] = mapped_devices
+            audience["device_type"] = device_types
 
         # 流量類型 → traffic_type
         traffic_types = _split_list(row.get("流量類型"))
@@ -471,43 +460,127 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
             audience["gender"] = genders
 
         # 興趣 / IAB / 關鍵字類
-        # 投放興趣選項 → category
-        interest_opts = _split_list(row.get("投放興趣選項"))
-        if interest_opts:
-            audience["category"] = interest_opts
-
-        # 投放興趣受眾 → IAB
+        # 投放興趣選項 → category.type (包含=1, 不包含=2)
+        # 投放興趣受眾 → category.value (IAB list)
+        interest_opt = _get_optional_str(row, "投放興趣選項")
         interest_audience = _split_list(row.get("投放興趣受眾"))
-        if interest_audience:
-            audience["IAB"] = interest_audience
+        
+        if interest_opt or interest_audience:
+            category: Dict[str, Any] = {}
+            
+            # Parse type from 投放興趣選項 (包含 or 不包含)
+            if interest_opt:
+                if interest_opt == "包含":
+                    category["type"] = 1
+                elif interest_opt == "不包含":
+                    category["type"] = 2
+                else:
+                    raise UploadParsingError(
+                        f"Row {excel_row_num}: 投放興趣選項必須為「包含」或「不包含」。"
+                    )
+            
+            # Use 投放興趣受眾 (IAB) as the value list
+            if interest_audience:
+                category["value"] = interest_audience
+            
+            if category:
+                audience["category"] = category
 
         # AI語意擴充選項 / AI語意擴充關鍵字 → keywords: { type, value }
-        ai_expand_opts = _split_list(row.get("AI語意擴充選項"))  # → keywords.type
+        # AI語意擴充選項 should be "1" or "2"
+        ai_expand_opt_raw = row.get("AI語意擴充選項")
         ai_expand_keywords = _split_list(row.get("AI語意擴充關鍵字"))  # → keywords.value
-        if ai_expand_opts or ai_expand_keywords:
-            # 決定 type: 1=include, 2=exclude
+        
+        opt_str = ""
+        if ai_expand_opt_raw is not None and not pd.isna(ai_expand_opt_raw):
+            opt_str = str(ai_expand_opt_raw).strip().lower()
+
+        # If both option and keywords are empty, skip silently
+        if opt_str == "" and not ai_expand_keywords:
+            pass
+        else:
             kw_type: Optional[int] = None
-            if ai_expand_opts:
-                token = ai_expand_opts[0].strip().lower()
-                if token in ("1", "include", "包含"):
+            if opt_str == "" and ai_expand_keywords:
+                # keywords provided but no type
+                raise UploadParsingError(
+                    f"Row {excel_row_num}: AI語意擴充選項必須為 1 或 2。"
+                )
+            elif opt_str:
+                if opt_str in ("1", "1.0"):
                     kw_type = 1
-                elif token in ("2", "exclude", "排除"):
+                elif opt_str in ("2", "2.0"):
                     kw_type = 2
                 else:
-                    # 如果是數字就直接轉
-                    try:
-                        kw_type = int(token)
-                    except Exception:
-                        kw_type = None
+                    raise UploadParsingError(
+                        f"Row {excel_row_num}: AI語意擴充選項必須為 1 或 2。"
+                    )
 
-            keywords: Dict[str, Any] = {}
+            # Only add keywords if type is set
             if kw_type is not None:
-                keywords["type"] = kw_type
-            if ai_expand_keywords:
-                keywords["value"] = ai_expand_keywords
-            audience["keywords"] = keywords
+                keywords: Dict[str, Any] = {
+                    "type": kw_type,
+                    "value": ai_expand_keywords  # Always set value, even if empty array
+                }
+                audience["keywords"] = keywords
 
-        # NOTE: pixel_audience1 / pixel_audience2 暫時不輸出到 JSON
+        # 自定義受眾（包含）→ pixel_audience with type: 1
+        # 自定義受眾（不包含）→ pixel_audience with type: 2
+        pixel_audience_include = _split_list(row.get("自定義受眾（包含）"))
+        pixel_audience_exclude = _split_list(row.get("自定義受眾（不包含）"))
+        
+        pixel_audience_list: List[Dict[str, int]] = []
+        
+        # Add include audiences (type: 1)
+        for id_str in pixel_audience_include:
+            try:
+                pixel_audience_list.append({"id": int(id_str), "type": 1})
+            except (ValueError, TypeError):
+                # Skip invalid IDs
+                continue
+        
+        # Add exclude audiences (type: 2)
+        for id_str in pixel_audience_exclude:
+            try:
+                pixel_audience_list.append({"id": int(id_str), "type": 2})
+            except (ValueError, TypeError):
+                # Skip invalid IDs
+                continue
+        
+        if pixel_audience_list:
+            audience["pixel_audience"] = pixel_audience_list
+
+        #
+        # Ad assets (creatives) per ad group
+        #
+        ad_assets: List[Dict[str, Any]] = group.setdefault("ad_asset", [])
+
+        cr_name = _get_optional_str(row, "廣告文案名稱")
+        cr_title = _get_optional_str(row, "廣告標題")
+        cr_desc = _get_optional_str(row, "廣告內文")
+        cr_btn = _get_optional_str(row, "Call to Action")
+        cr_iab = _get_optional_str(row, "廣告類型")  # per mapping request
+
+        cr_mt_raw = row.get("廣告素材ID")
+        cr_mt_id: Optional[int | str] = None
+        if cr_mt_raw is not None and not pd.isna(cr_mt_raw):
+            try:
+                cr_mt_id = int(str(cr_mt_raw).strip())
+            except Exception:
+                cr_mt_id = str(cr_mt_raw).strip()
+
+        # Add asset only if at least one meaningful field is present
+        if any([cr_name, cr_title, cr_desc, cr_btn, cr_iab, cr_mt_id]):
+            asset: Dict[str, Any] = {
+                #"group_id": group.get("group_id"),
+                "cr_name": cr_name,
+                "cr_title": cr_title,
+                "cr_desc": cr_desc,
+                "cr_btn_text": cr_btn,
+                "iab": cr_iab,
+                "cr_mt_id": cr_mt_id if cr_mt_id is not None else 0,
+                "cr_icon_id": 0,
+            }
+            ad_assets.append(asset)
 
     return {"campaign": list(campaigns.values())}
 

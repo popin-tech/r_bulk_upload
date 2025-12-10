@@ -254,9 +254,11 @@ def commit():
         # 5) to JSON (campaign only)
         campaign_payload = excel_to_campaign_json(df)
         app.logger.info("=== Campaign JSON Parsed ===")
-        app.logger.info(campaign_payload)   # Cloud Run logs
+        # Always log as JSON string (copy-paste ready)
+        import json
+        app.logger.info(json.dumps(campaign_payload, ensure_ascii=False, indent=2))   # Cloud Run logs
         print("=== Campaign JSON Parsed ===")
-        print(campaign_payload)
+        print(json.dumps(campaign_payload, ensure_ascii=False, indent=2))
 
     except UploadParsingError as exc:
         return _error(str(exc), 400)
