@@ -259,16 +259,15 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         if target_info_url:
             group["target_info"] = target_info_url
 
-        # 第三方點擊追蹤連結(Grouped) → click_url
-        click_urls = _split_list(row.get("第三方點擊追蹤連結(Grouped)"))
+        # 第三方點擊追蹤連結(Grouped) → click_url, only https
+        click_urls = [u.strip() for u in _split_list(row.get("第三方點擊追蹤連結(Grouped)")) if u and str(u).strip().startswith("https://")]
         if click_urls:
             group["click_url"] = click_urls
 
-        # 第三方曝光追蹤連結(Grouped) → impression_url
-        imp_urls = _split_list(row.get("第三方曝光追蹤連結(Grouped)"))
+        # 第三方曝光追蹤連結(Grouped) → impression_url, only https and formatted as <img src="url">
+        imp_urls = [u.strip() for u in _split_list(row.get("第三方曝光追蹤連結(Grouped)")) if u and str(u).strip().startswith("https://")]
         if imp_urls:
-            # type is not defined in sheet; default to 1
-            group["impression_url"] = [{"type": 1, "value": u} for u in imp_urls]
+            group["impression_url"] = [{"type": 2, "value": f'<img src="{u}">'} for u in imp_urls]
 
         #
         # Budget block
@@ -295,7 +294,8 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         # 計費模式 → rev_type
         billing_type = _get_optional_str(row, "計費模式")
         if billing_type:
-            budget["rev_type"] = billing_type
+            type_map = {"CPM": 2, "CPC": 3}
+            budget["rev_type"] = type_map.get(billing_type, billing_type)
 
         price_val = row.get("固定出價")
         price = _to_float(price_val)
@@ -343,20 +343,21 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
                         f"Row {excel_row_num}: 深度轉換目標為「指定轉換目標」時，必須填寫「{'、'.join(missing)}」。"
                     )
 
-        if conv_value is not None:
+        # target_value：只有在 type != 0 時才輸出
+        if conv_value is not None and t != 0:
             conversion_goal["target_value"] = conv_value
-        else:
-            conversion_goal["target_value"] = 0
-        if conv_goal is not None:
+
+        # convert_event：只有在 type != 0 時才輸出
+        if conv_goal is not None and t != 0:
             conv_goal_map = {
-            "點擊數": 11,
-            "網頁瀏覽": 13,
-            "完成註冊": 6,
-            "搜尋": 5,
-            "收藏": 3,
-            "加入購物車": 4,
-            "開始結帳": 2,
-            "完成結帳": 1
+                "點擊數": 11,
+                "網頁瀏覽": 13,
+                "完成註冊": 6,
+                "搜尋": 5,
+                "收藏": 3,
+                "加入購物車": 4,
+                "開始結帳": 2,
+                "完成結帳": 1,
             }
             cg = conv_goal_map.get(conv_goal)
             if cg is None:
@@ -364,8 +365,6 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
                     f"Row {excel_row_num}: 不支援的轉換目標「{conv_goal}」，請確認是否拼寫正確。"
                 )
             conversion_goal["convert_event"] = cg
-        else:
-            conversion_goal["convert_event"] = 0
 
         if conversion_goal:
             budget["conversion_goal"] = conversion_goal
@@ -435,44 +434,77 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         # 設備類型 → device_type
         device_types = _split_list(row.get("設備類型"))
         if device_types:
-            audience["device_type"] = device_types
+            device_types_int = []
+            for d in device_types:
+                try:
+                    device_types_int.append(int(d))
+                except Exception:
+                    continue
+            audience["device_type"] = device_types_int
 
-        # 流量類型 → traffic_type
+        # 流量類型 → traffic_type, force int
         traffic_types = _split_list(row.get("流量類型"))
         if traffic_types:
-            audience["traffic_type"] = traffic_types
+            traffic_types_int = []
+            for t in traffic_types:
+                try:
+                    traffic_types_int.append(int(t))
+                except Exception:
+                    continue
+            audience["traffic_type"] = traffic_types_int
 
-        # 受眾層級 OS / 平台: 操作系統(第二欄) → platform
+        # 受眾層級 OS / 平台: 操作系統(第二欄) → platform, force int
         target_os_raw = (
             _get_optional_str(row, target_os_col) if target_os_col else None
         )
         if target_os_raw:
-            audience["platform"] = _split_list(target_os_raw)
+            platforms = _split_list(target_os_raw)
+            platforms_int = []
+            for p in platforms:
+                try:
+                    platforms_int.append(int(p))
+                except Exception:
+                    continue
+            audience["platform"] = platforms_int
 
-        # 最高系統版本 → os_version
+        # 最高系統版本 → os_version as {min, max}
         max_os_ver_raw = row.get("最高系統版本")
-        if not pd.isna(max_os_ver_raw):
-            try:
-                max_ver = float(str(max_os_ver_raw).strip())
-                audience["os_version"] = max_ver
-            except Exception:
-                # ignore parse error
-                pass
+        min_version = 0
+        max_version = 0
+        audience["os_version"] = {"min": min_version, "max": max_version}
 
-        # 瀏覽器 → browser
+        # 瀏覽器 → browser, force int
         browsers = _split_list(row.get("瀏覽器"))
         if browsers:
-            audience["browser"] = browsers
+            browsers_int = []
+            for b in browsers:
+                try:
+                    browsers_int.append(int(b))
+                except Exception:
+                    continue
+            audience["browser"] = browsers_int
 
-        # 年齡 → age
+        # 年齡 → age, force int
         ages = _split_list(row.get("年齡"))
         if ages:
-            audience["age"] = ages
+            ages_int = []
+            for a in ages:
+                try:
+                    ages_int.append(int(a))
+                except Exception:
+                    continue
+            audience["age"] = ages_int
 
-        # 性別 → gender
+        # 性別 → gender, force int
         genders = _split_list(row.get("性別"))
         if genders:
-            audience["gender"] = genders
+            genders_int = []
+            for g in genders:
+                try:
+                    genders_int.append(int(g))
+                except Exception:
+                    continue
+            audience["gender"] = genders_int
 
         # 興趣 / IAB / 關鍵字類
         # 投放興趣選項 → category.type (包含=1, 不包含=2)
