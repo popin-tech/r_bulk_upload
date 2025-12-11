@@ -183,6 +183,15 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
             if brand:
                 campaign["sponsored"] = brand
 
+            # 主網域名稱 → adomain
+            adomain = _get_optional_str(row, "主網域名稱")
+            if adomain is not None:
+                campaign["adomain"] = adomain
+            else:
+                raise UploadParsingError(
+                        f"Row {excel_row_num}: 主網域名稱必須填寫。"
+                    )
+
             # 產品類型 → ad_channel (1=app, 2=web)
             if product_type == "app":
                 campaign["ad_channel"] = 1
