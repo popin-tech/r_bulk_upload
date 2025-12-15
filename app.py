@@ -182,12 +182,12 @@ def list_accounts():
         return user  # 401 / 403
 
     accounts = _load_accounts()
-    emails = [
-        item.get("email")
+    items = [
+        {"name": item.get("name"), "email": item.get("email")}
         for item in accounts
         if item.get("email")
     ]
-    return jsonify({"accounts": emails})
+    return jsonify({"accounts": items})
 
 
 @app.route("/api/health", methods=["GET"])
