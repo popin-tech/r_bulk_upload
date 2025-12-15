@@ -79,8 +79,14 @@
                         </label>
                         <div id="file-info-row" class="file-info-row" style="display: none;">
                             <div class="file-info">
-                                <span id="file-name"></span>
-                                <button id="remove-file-btn" class="remove-file-btn">×</button>
+                                <div id="file-name">filename.xlsx</div>
+                                <button id="view-last-result-btn" class="action-btn"
+                                    style="display: none; margin-right: 12px; font-size: 13px; padding: 6px 12px; border-radius: 6px;">
+                                    <i class="bi bi-clock-history"></i> Last Result
+                                </button>
+                                <button id="remove-file-btn" class="remove-file-btn"
+                                    title="Remove file">&times;</button>
+
                             </div>
                             <button id="generate-preview-btn" class="action-btn">
                                 Generate Preview
@@ -157,6 +163,26 @@
     <footer class="cmp-footer">
         &copy; 2025 popIn. All rights reserved. • Internal Use Only
     </footer>
+    <!-- Result Modal -->
+    <div class="modal fade" id="resultModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Sync Results</h5>
+                    <button type="button" class="btn-close" id="result-modal-corner-close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="result-tree" class="result-tree-container">
+                        <!-- Dynamic content will be inserted here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="result-modal-close-btn">Close & Reset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div id="toast-container"></div>
 

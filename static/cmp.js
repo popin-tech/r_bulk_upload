@@ -39,8 +39,8 @@ async function loadAccounts() {
             const name = acc.name || email;
 
             $accountSelect.append($('<option>', {
-                value: email,                          
-                text: `${name} (${email})`             
+                value: email,
+                text: `${name} (${email})`
             }));
         });
 
@@ -54,9 +54,20 @@ async function loadAccounts() {
 /**
  * Handle account selection change
  */
+// Store last sync result for re-opening
+let lastSyncResult = null;
+
+function hideLastResultBtn() {
+    $('#view-last-result-btn').hide();
+    lastSyncResult = null;
+}
+
 function handleAccountChange(event) {
     selectedAccount = $(event.target).val();
     console.log("[handleAccountChange] selected:", selectedAccount);
+
+    // Reset previous sync results on account change
+    hideLastResultBtn();
 
     if (selectedAccount) {
         console.log("[handleAccountChange] Account selected, showing Step 2");
@@ -82,12 +93,18 @@ function handleFileSelect(event) {
 
     console.log("[handleFileSelect] file selected:", file.name);
     uploadedFile = file;
+    // Reset previous sync results on new file
+    hideLastResultBtn();
+
     updateFileUI(file);
 }
 
 function removeFile() {
     console.log("[removeFile] removing file");
     uploadedFile = null;
+
+    // Reset previous sync results
+    hideLastResultBtn();
 
     $("#excel-file-input").val("");
     $("#file-info-row").hide();
@@ -413,29 +430,22 @@ async function handleConfirmSync() {
     $btn.text('Syncing...');
 
     try {
-        await syncToCommit();
+        const result = await syncToCommit();
 
-        // Use custom toast instead of alert
-        showToast('Successfully synced to Broadciel!', 'success');
-
-        // Close modal
+        // Close preview modal
         $('#previewModal').modal('hide');
 
-        // === Reset Workflow ===
-        // 1. Remove file
-        removeFile();
+        // Save result and show button
+        lastSyncResult = result;
+        $('#view-last-result-btn').show();
 
-        // 2. Reset Step 1 (Account Selection)
-        selectedAccount = null;
-        $('#account-select').val('');
+        // Show Result Modal
+        showResultModal(result);
 
-        // 3. Hide Step 2
-        $('#step-2').hide().removeClass('fade-in');
+        showToast('Successfully synced to Broadciel!', 'success');
 
     } catch (error) {
-
         console.error('[handleConfirmSync] error:', error);
-        // Use custom toast instead of alert
         showToast(`Sync failed: ${error.message}`, 'error');
     } finally {
         // Restore button state
@@ -444,6 +454,110 @@ async function handleConfirmSync() {
     }
 }
 
+/**
+ * Show the Result Modal with hierarchical data
+ */
+function showResultModal(commitResult) {
+    const $modal = $('#resultModal');
+    const $container = $('#result-tree');
+
+    // Clear previous results
+    $container.empty();
+
+    const processingResult = commitResult.processing_result;
+    if (!processingResult || !processingResult.details) {
+        $container.html('<div class="text-white p-3">No detail results available.</div>');
+    } else {
+        // Render Tree
+        renderSyncResults(processingResult.details, $container);
+    }
+
+    // Show modal
+    const modal = new bootstrap.Modal($modal[0]);
+    modal.show();
+
+    // Bind close event for reset
+    $('#result-modal-close-btn').off('click').on('click', closeResultModal);
+    $('#result-modal-corner-close').off('click').on('click', closeResultModal);
+}
+
+/**
+ * Recursive function to render result tree
+ */
+function renderSyncResults(items, $container) {
+    if (!items || items.length === 0) return;
+
+    items.forEach(item => {
+        // Determine type based on properties
+        let type = 'unknown';
+        let name = '';
+        let children = [];
+        let success = item.success;
+        let errorMsg = item.error_message;
+
+        if (item.campaign_name !== undefined) {
+            type = 'campaign';
+            name = item.campaign_name || `Campaign #${item.campaign_index}`;
+            children = item.ad_groups || [];
+        } else if (item.ad_group_name !== undefined) {
+            type = 'adgroup';
+            name = item.ad_group_name || `AdGroup #${item.ad_group_index}`;
+            children = item.ad_assets || [];
+        } else if (item.creative_name !== undefined) {
+            type = 'creative';
+            name = item.creative_name || `Creative #${item.ad_asset_index}`;
+        }
+
+        // Build Node HTML
+        const statusIcon = success ?
+            '<i class="bi bi-check-circle-fill status-success"></i>' :
+            '<i class="bi bi-x-circle-fill status-error"></i>';
+
+        const $node = $(`
+            <div class="result-node level-${type}">
+                ${children.length > 0 ? '<div class="result-collapse"><i class="bi bi-caret-down-fill"></i></div>' : '<div class="result-collapse" style="opacity:0"></div>'}
+                <div class="result-status-icon">${statusIcon}</div>
+                <div class="result-content">
+                    <div class="result-title">${escapeHtml(name)}</div>
+                    ${errorMsg ? `<div class="result-error-msg">${escapeHtml(errorMsg)}</div>` : ''}
+                </div>
+            </div>
+        `);
+
+        // Handle Collapse/Expand
+        if (children.length > 0) {
+            $node.find('.result-collapse').on('click', function () {
+                const $icon = $(this);
+                const $childrenContainer = $node.next('.result-children');
+                $childrenContainer.slideToggle(200);
+                $icon.toggleClass('collapsed');
+            });
+        }
+
+        $container.append($node);
+
+        // Render Children
+        if (children.length > 0) {
+            const $childrenContainer = $('<div class="result-children"></div>');
+            $container.append($childrenContainer);
+            renderSyncResults(children, $childrenContainer);
+        }
+    });
+}
+
+function viewLastResult() {
+    if (lastSyncResult) {
+        showResultModal(lastSyncResult);
+    } else {
+        showToast('No previous result found', 'warning');
+    }
+}
+
+function closeResultModal() {
+    $('#resultModal').modal('hide');
+    // Note: We NO LONGER reset the workflow here.
+    // The user stays on Step 2 with the file selected and can view the result again.
+}
 
 // Initialize on page load using jQuery
 $(document).ready(function () {
@@ -458,6 +572,7 @@ $(document).ready(function () {
     $("#remove-file-btn").on("click", removeFile);
     $("#generate-preview-btn").on("click", generatePreview);
     $("#confirm-preview-btn").on("click", handleConfirmSync);
+    $("#view-last-result-btn").on("click", viewLastResult);
 
     // Initialize drag and drop
     initializeDragAndDrop();
@@ -468,4 +583,4 @@ window.loadAccounts = loadAccounts;
 window.downloadTemplate = downloadTemplate;
 window.generatePreview = generatePreview;
 window.syncToCommit = syncToCommit;
-window.showToast = showToast;
+window.viewLastResult = viewLastResult;
