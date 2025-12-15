@@ -775,3 +775,241 @@ body {
     background: rgba(57, 159, 171, 0.9);
     border-color: rgba(255, 255, 255, 0.3);
 }
+
+/* Result Modal Styles (Matching Glassmorphism Theme) */
+#resultModal .modal-dialog {
+    max-width: 95%;
+    margin: 1.5rem auto;
+}
+
+#resultModal .modal-content {
+    background: rgba(255, 255, 255, 0.25) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    color: var(--text-white);
+}
+
+
+#resultModal .modal-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.15);
+    padding: 1.25rem;
+}
+
+#resultModal .modal-title {
+    color: var(--text-white);
+    font-weight: 600;
+}
+
+#resultModal .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: 0.8;
+}
+
+#resultModal .btn-close:hover {
+    opacity: 1;
+}
+
+#resultModal .modal-body {
+    background: transparent;
+    padding: 1.5rem;
+}
+
+#resultModal .modal-footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.result-tree-container {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 0;
+    background: #000000b5;
+    border-radius: 0.5rem;
+}
+
+/* Custom Scrollbar */
+.result-tree-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.result-tree-container::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.result-tree-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+/* Base Node - Resetting default styles */
+.result-node {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    margin-bottom: 2px;
+    color: var(--text-white);
+    transition: all 0.2s;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    /* Subtle separator */
+}
+
+/* === Campaign Level (Card Style) === */
+.result-node.level-campaign {
+    margin-top: 16px;
+    margin-bottom: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px 16px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.result-node.level-campaign:first-child {
+    margin-top: 0;
+}
+
+.result-node.level-campaign:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.result-node.level-campaign .result-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+}
+
+/* === AdGroup Level (List Item Style) === */
+.result-node.level-adgroup {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding-left: 0;
+    /* Reset padding, indentation handled by container */
+    margin-bottom: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.result-node.level-adgroup:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.result-node.level-adgroup .result-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #e0e0e0;
+}
+
+/* === Creative Level (Sub-Item Style) === */
+.result-node.level-creative {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding-left: 0;
+    margin-bottom: 0;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+.result-node.level-creative:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.result-node.level-creative .result-title {
+    font-size: 13px;
+    color: #b0b0b0;
+}
+
+/* Indentation Containers */
+.result-children {
+    padding-left: 32px;
+    position: relative;
+    /* Connectors lines */
+}
+
+/* Connector Line Logic */
+.result-children::before {
+    content: '';
+    position: absolute;
+    left: 14px;
+    top: 0;
+    bottom: 12px;
+    width: 2px;
+    background: rgb(0 188 212 / 50%);
+}
+
+/* Hide top level connector for campaigns container if needed (usually handled by render logic) */
+
+/* Icons & text */
+.result-collapse {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: transform 0.2s;
+    border-radius: 4px;
+}
+
+.result-collapse:hover {
+    background: rgba(255, 255, 255, 0.1);
+    opacity: 1;
+}
+
+.result-collapse.collapsed i {
+    transform: rotate(-90deg);
+}
+
+.result-status-icon {
+    font-size: 16px;
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+}
+
+.status-success {
+    color: #00e676;
+    /* Brighter green */
+    filter: drop-shadow(0 0 4px rgba(0, 230, 118, 0.3));
+}
+
+.status-error {
+    color: #ff5252;
+    filter: drop-shadow(0 0 4px rgba(255, 82, 82, 0.3));
+}
+
+/* Content Layout */
+.result-content {
+    flex: 1;
+}
+
+.result-error-msg {
+    margin-top: 4px;
+    display: inline-block;
+    font-size: 12px;
+    color: #ff8a80;
+    background: rgba(255, 82, 82, 0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 82, 82, 0.2);
+}
+
+/* Hover effect for modal buttons */
+#resultModal .btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--text-white);
+    transition: all 0.2s;
+}
+
+#resultModal .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+    transform: translateY(-1px);
+}
