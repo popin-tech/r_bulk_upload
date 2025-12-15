@@ -66,7 +66,7 @@ async function logout() {
     }
 
     localStorage.removeItem("user_email");
-    window.location.href = "/login";
+    window.location.href = "/";
 }
 
 /**
@@ -131,7 +131,7 @@ async function handleGoogleCredential(response, options = {}) {
     }
 }
 
-const isLoginPage = window.location.pathname === '/login';
+const isLoginPage = window.location.pathname === '/';
 const isCmpPage = window.location.pathname === '/cmp';
 
 const originalHandleGoogleCredential = handleGoogleCredential;

@@ -500,11 +500,11 @@ if app.config.get("ENABLE_FRONTEND", False):
     @app.route("/")
     def index():
         # Do NOT send account_emails to the template anymore
-        return render_template("index.html")
-
-    @app.route("/login")
-    def login():
         return render_template("login.html")
+
+    #@app.route("/login")
+    #def login():
+    #    return render_template("login.html")
 
     @app.route("/cmp")
     def cmp():
