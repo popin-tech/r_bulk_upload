@@ -34,10 +34,13 @@ async function loadAccounts() {
 
         // Clear and populate dropdown using jQuery
         $accountSelect.html('<option value="">-- Select an account --</option>');
-        accounts.forEach(email => {
+        accounts.forEach(acc => {
+            const email = acc.email;
+            const name = acc.name || email;
+
             $accountSelect.append($('<option>', {
-                value: email,
-                text: email
+                value: email,                          
+                text: `${name} (${email})`             
             }));
         });
 

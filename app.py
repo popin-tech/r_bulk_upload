@@ -123,10 +123,12 @@ def _require_user() -> GoogleUser:
     
     return user
 
-def _broadciel_client() -> BroadcielClient:
+def _broadciel_client(account_email: str = None, raw_token: str = None) -> BroadcielClient:
     return BroadcielClient(
         base_url=app.config["BROADCIEL_API_BASE_URL"],
         api_key=app.config["BROADCIEL_API_KEY"],
+        account_email=account_email,
+        raw_token=raw_token,
     )
 
 
@@ -180,12 +182,12 @@ def list_accounts():
         return user  # 401 / 403
 
     accounts = _load_accounts()
-    emails = [
-        item.get("email")
+    items = [
+        {"name": item.get("name"), "email": item.get("email")}
         for item in accounts
         if item.get("email")
     ]
-    return jsonify({"accounts": emails})
+    return jsonify({"accounts": items})
 
 
 @app.route("/api/health", methods=["GET"])
@@ -239,10 +241,14 @@ def commit():
     if not isinstance(user, GoogleUser):
         return user
 
-    # 2) get excel file
+    # 2) get excel file and account_email from form
     upload = request.files.get("file")
     if upload is None or upload.filename == "":
         return _error("No Excel file uploaded.", 400)
+    
+    account_email = request.form.get("account_email")
+    if not account_email:
+        return _error("Missing account_email parameter.", 400)
 
     try:
         # 3) read bytes
@@ -259,15 +265,35 @@ def commit():
         app.logger.info(json.dumps(campaign_payload, ensure_ascii=False, indent=2))   # Cloud Run logs
         print("=== Campaign JSON Parsed ===")
         print(json.dumps(campaign_payload, ensure_ascii=False, indent=2))
+        
+        # 6) get raw token and create client with auto token exchange
+        raw_token = _get_token_for_email(account_email)
+        if not raw_token:
+            return _error(f"No raw token found for account: {account_email}", 400)
+        
+        client = _broadciel_client(account_email, raw_token)
+        
+        # 7) process campaigns using CampaignBulkProcessor
+        processor = CampaignBulkProcessor(client)
+        processing_result = processor.process_bulk_campaigns(campaign_payload)
+        
+        app.logger.info("=== Campaign Processing Complete ===")
+        app.logger.info(json.dumps(processing_result, ensure_ascii=False, indent=2))
+        print("=== Campaign Processing Complete ===")
+        print(json.dumps(processing_result, ensure_ascii=False, indent=2))
+        
+        # 8) return processing results
+        return jsonify({
+            "status": "ok",
+            "account_email": account_email,
+            "processing_result": processing_result
+        })
 
     except UploadParsingError as exc:
         return _error(str(exc), 400)
     except Exception as exc:
-        return _error(f"Unexpected error: {exc}", 500)
-    return jsonify({
-        "status": "ok",
-        "campaign": campaign_payload["campaign"]
-    })
+        app.logger.error(f"Commit failed: {str(exc)}")
+        return _error(f"Commit failed: {str(exc)}", 500)
 
 
 
