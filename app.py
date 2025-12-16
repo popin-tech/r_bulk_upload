@@ -22,7 +22,7 @@ app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me-please"
 app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
 app.config["BROADCIEL_API_BASE_URL"] = os.getenv(
     "BROADCIEL_API_BASE_URL",
-    "https://broadciel.console.rixbeedesk.com/api/v2",
+    "https://broadciel.ads.rixbeedesk.com/api/v2",
 )
 app.config["BROADCIEL_API_KEY"] = os.getenv("BROADCIEL_API_KEY", "")
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "20")) * 1024 * 1024
