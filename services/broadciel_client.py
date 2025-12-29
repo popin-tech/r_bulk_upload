@@ -512,3 +512,42 @@ class BroadcielClient:
         self._api_token = token  # 同時更新內部 token
         return token
 
+    def fetch_ai_audiences(self) -> List[Dict[str, Any]]:
+        """
+        Fetch the list of AI audiences.
+        
+        Returns:
+            List of audience dictionaries.
+        """
+        headers = self._auth_headers()
+        
+        if self.DEBUG_LOG:
+            print("=== fetch_ai_audiences API Request ===")
+            print(f"URL: {self.base_url}/ai-audiences")
+            print("=" * 40)
+
+        resp = self.session.get(
+            f"{self.base_url}/ai-audiences",
+            headers=headers,
+            timeout=30,
+        )
+
+        if self.DEBUG_LOG:
+            print("=== fetch_ai_audiences API Response ===")
+            print(f"Status Code: {resp.status_code}")
+            try:
+                import json
+                print(f"Response JSON: {json.dumps(resp.json(), ensure_ascii=False, indent=2)}")
+            except Exception:
+                pass
+            print("=" * 40)
+
+        resp.raise_for_status()
+        data = resp.json()
+        
+        if data.get("code") != 200:
+            raise Exception(f"Failed to fetch audiences: {data.get('message')}")
+            
+        # The response structure is data -> data -> [list]
+        return data.get("data", {}).get("data", [])
+

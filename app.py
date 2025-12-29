@@ -254,11 +254,34 @@ def commit():
         # 3) read bytes
         file_bytes = upload.read()
 
-        # 4) full DataFrame
+        # 4) get raw token and create client with auto token exchange (moved up)
+        raw_token = _get_token_for_email(account_email)
+        if not raw_token:
+            return _error(f"No raw token found for account: {account_email}", 400)
+        
+        client = _broadciel_client(account_email, raw_token)
+
+        # 5) Fetch AI Audiences for name mapping
+        audience_map = {}
+        try:
+            audiences = client.fetch_ai_audiences()
+            # Construct map: name -> id. 
+            # Note: The user said "audience_name" in API response maps to "audience_id"
+            for item in audiences:
+                a_name = item.get("audience_name")
+                a_id = item.get("audience_id")
+                if a_name and a_id:
+                    audience_map[str(a_name).strip()] = int(a_id)
+            app.logger.info(f"Loaded {len(audience_map)} AI audiences for mapping.")
+        except Exception as e:
+            app.logger.warning(f"Failed to fetch AI audiences: {e}. Name mapping will be disabled.")
+            print(f"Failed to fetch AI audiences: {e}")
+
+        # 6) full DataFrame
         df = parse_excel_df(file_bytes)
 
-        # 5) to JSON (campaign only)
-        campaign_payload = excel_to_campaign_json(df)
+        # 7) to JSON (campaign only), passing audience_map
+        campaign_payload = excel_to_campaign_json(df, audience_name_map=audience_map)
         app.logger.info("=== Campaign JSON Parsed ===")
         # Always log as JSON string (copy-paste ready)
         import json
@@ -266,14 +289,7 @@ def commit():
         print("=== Campaign JSON Parsed ===")
         print(json.dumps(campaign_payload, ensure_ascii=False, indent=2))
         
-        # 6) get raw token and create client with auto token exchange
-        raw_token = _get_token_for_email(account_email)
-        if not raw_token:
-            return _error(f"No raw token found for account: {account_email}", 400)
-        
-        client = _broadciel_client(account_email, raw_token)
-        
-        # 7) process campaigns using CampaignBulkProcessor
+        # 8) process campaigns using CampaignBulkProcessor
         processor = CampaignBulkProcessor(client)
         processing_result = processor.process_bulk_campaigns(campaign_payload)
         

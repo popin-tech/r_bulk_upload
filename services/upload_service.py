@@ -55,7 +55,7 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
         f"Row {excel_row_num}: 欄位「{field}」格式錯誤，必須為 yyyy-mm-dd hh，例如：2025-12-10 08"
     )
 
-def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
+def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[str, int]] = None) -> Dict[str, object]:
     """
     Convert the uploaded Excel sheet into the nested campaign JSON structure
     expected by Broadciel Ads v2 bulk campaign API.
@@ -577,21 +577,40 @@ def excel_to_campaign_json(df: pd.DataFrame) -> Dict[str, object]:
         
         pixel_audience_list: List[Dict[str, int]] = []
         
-        # Add include audiences (type: 1)
-        for id_str in pixel_audience_include:
+        def _resolve_audience_id(val: str) -> Optional[int]:
+            # 1. Try integer
             try:
-                pixel_audience_list.append({"id": int(id_str), "type": 1})
+                return int(val)
             except (ValueError, TypeError):
-                # Skip invalid IDs
-                continue
+                pass
+            
+            # 2. Try map look up
+            if audience_name_map:
+                # remove whitespace just in case
+                v_clean = val.strip()
+                if v_clean in audience_name_map:
+                    return audience_name_map[v_clean]
+            
+            return None
+
+        # Add include audiences (type: 1)
+        for val_str in pixel_audience_include:
+            aid = _resolve_audience_id(val_str)
+            if aid is not None:
+                pixel_audience_list.append({"id": aid, "type": 1})
+            else:
+                # Optional: log warning or raise error if name not found?
+                # For now, we just skip invalid ones as per original logic, 
+                # but maybe logging would be better.
+                pass
         
         # Add exclude audiences (type: 2)
-        for id_str in pixel_audience_exclude:
-            try:
-                pixel_audience_list.append({"id": int(id_str), "type": 2})
-            except (ValueError, TypeError):
-                # Skip invalid IDs
-                continue
+        for val_str in pixel_audience_exclude:
+            aid = _resolve_audience_id(val_str)
+            if aid is not None:
+                pixel_audience_list.append({"id": aid, "type": 2})
+            else:
+                pass
         
         if pixel_audience_list:
             audience["pixel_audience"] = pixel_audience_list
