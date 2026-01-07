@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 import pandas as pd
@@ -27,28 +27,35 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
     if not value:
         return value
 
+    parsed_dt = None
+
     # 若 Excel 讀入是 timestamp / datetime 物件
     if isinstance(value, (datetime, pd.Timestamp)):
-        return value.strftime("%Y-%m-%d %H")
+        parsed_dt = value
+    else:
+        s = value.strip()
+        # 正規 YYYY-MM-DD HH
+        try:
+            parsed_dt = datetime.strptime(s, "%Y-%m-%d %H")
+        except Exception:
+            pass
 
-    s = value.strip()
-
-    # 正規 YYYY-MM-DD HH
-    try:
-        parsed = datetime.strptime(s, "%Y-%m-%d %H")
-        return parsed.strftime("%Y-%m-%d %H")
-    except Exception:
-        pass
-
-    # 若使用者輸入 yyyy/mm/dd hh, yyyy.mm.dd hh 也自動修正
-    for sep in ["/", "."]:
-        if sep in s:
-            s_fixed = s.replace(sep, "-")
-            try:
-                parsed = datetime.strptime(s_fixed, "%Y-%m-%d %H")
-                return parsed.strftime("%Y-%m-%d %H")
-            except Exception:
-                break
+        if parsed_dt is None:
+            # 若使用者輸入 yyyy/mm/dd hh, yyyy.mm.dd hh 也自動修正
+            for sep in ["/", "."]:
+                if sep in s:
+                    s_fixed = s.replace(sep, "-")
+                    try:
+                        parsed_dt = datetime.strptime(s_fixed, "%Y-%m-%d %H")
+                        break
+                    except Exception:
+                        pass
+    
+    # 成功解析後，進行時區扣減 (UTC+8 -> UTC)
+    if parsed_dt:
+        # Subtract 8 hours
+        final_dt = parsed_dt - timedelta(hours=8)
+        return final_dt.strftime("%Y-%m-%d %H")
 
     # 都不符合 → 拋錯
     raise UploadParsingError(
@@ -186,7 +193,15 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
             # 主網域名稱 → adomain
             adomain = _get_optional_str(row, "主網域名稱")
             if adomain is not None:
-                campaign["adomain"] = adomain
+                # 移除 http:// 或 https://
+                cleaned_adomain = adomain.lower()
+                for prefix in ["https://", "http://"]:
+                    if cleaned_adomain.startswith(prefix):
+                        cleaned_adomain = cleaned_adomain[len(prefix):]
+                # 也要移除結尾的 / (如果有的話)
+                cleaned_adomain = cleaned_adomain.rstrip("/")
+                
+                campaign["adomain"] = cleaned_adomain
             else:
                 raise UploadParsingError(
                         f"Row {excel_row_num}: 主網域名稱必須填寫。"
@@ -402,7 +417,9 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
         hours_raw = row.get("投放時間段")
         hours = _parse_int_list(hours_raw)
         if hours:
-            schedule["hours"] = hours
+            # UTC+8 換成 UTC (local - 8)
+            hours_utc = [(h - 8) % 24 for h in hours]
+            schedule["hours"] = hours_utc
 
         #
         # Location
@@ -620,11 +637,11 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
         #
         ad_assets: List[Dict[str, Any]] = group.setdefault("ad_asset", [])
 
-        cr_name = _get_optional_str(row, "廣告文案名稱")
-        cr_title = _get_optional_str(row, "廣告標題")
-        cr_desc = _get_optional_str(row, "廣告內文")
-        cr_btn = _get_optional_str(row, "Call to Action")
-        cr_iab = _get_optional_str(row, "廣告類型")  # per mapping request
+        cr_name = _get_str(row, "廣告文案名稱")
+        cr_title = _get_str(row, "廣告標題")
+        cr_desc = _get_str(row, "廣告內文")
+        cr_btn = _get_str(row, "Call to Action")
+        cr_iab = _get_str(row, "廣告類型")  # per mapping request
 
         cr_mt_raw = row.get("廣告素材ID")
         cr_mt_id: Optional[int | str] = None
