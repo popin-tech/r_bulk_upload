@@ -129,15 +129,17 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
                 continue
         return items
 
-    # Identify the two 操作系統 columns if they exist
-    all_cols = list(df.columns)
-    os_cols = [c for c in all_cols if str(c).startswith("操作系統")]
-    app_os_col: Optional[str] = None
-    target_os_col: Optional[str] = None
-    if os_cols:
-        app_os_col = os_cols[0]
-        if len(os_cols) > 1:
-            target_os_col = os_cols[1]
+    # Identify columns
+    # App OS: "操作系統"
+    # Target OS: "受眾操作系統"
+    app_os_col: Optional[str] = "操作系統"
+    target_os_col: Optional[str] = "受眾操作系統"
+    
+    # Check existence
+    if app_os_col not in df.columns:
+        app_os_col = None
+    if target_os_col not in df.columns:
+        target_os_col = None
 
     campaigns: Dict[str, Dict[str, Any]] = {}
 
@@ -174,9 +176,9 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
             cpg_id_val = _get_optional_str(row, "廣告活動ID")
             if cpg_id_val is not None:
                 try:
-                    campaign["cpg_id"] = int(cpg_id_val)
+                    campaign["cpg_id"] = int(float(cpg_id_val))
                 except Exception:
-                    campaign["cpg_id"] = cpg_id_val
+                    pass
 
             # 活動層級預算
             cpg_budget_val = row.get("每日預算(NT$)")
@@ -236,6 +238,20 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
 
                 campaign["app"] = app_obj
 
+            # 廣告活動狀態 -> cpg_status (1=開啟, 2=關閉)
+            cpg_status_raw = _get_optional_str(row, "廣告活動狀態")
+            if cpg_status_raw:
+                 # Check for text or numeric representation
+                 v = cpg_status_raw.strip()
+                 if v == "開啟":
+                      campaign["cpg_status"] = 1
+                 elif v == "關閉":
+                      campaign["cpg_status"] = 2
+                 elif v in ("1", "1.0"):
+                      campaign["cpg_status"] = 1
+                 elif v in ("2", "2.0"):
+                      campaign["cpg_status"] = 2
+            
             campaigns[campaign_name] = campaign
         else:
             campaign = campaigns[campaign_name]
@@ -258,12 +274,26 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
                 "group_name": group_name
             }
             # 廣告群組ID → group_id
-            group_id = _get_optional_str(row, "廣告群組ID")
-            if group_id:
+            group_id_val = _get_optional_str(row, "廣告群組ID")
+            if group_id_val is not None:
                 try:
-                    group["group_id"] = int(group_id)
+                    group["group_id"] = int(float(group_id_val))
                 except Exception:
-                    group["group_id"] = group_id
+                    pass
+            
+            # 廣告群組狀態 -> group_status (1=開啟, 2=關閉)
+            group_status_raw = _get_optional_str(row, "廣告群組狀態")
+            if group_status_raw:
+                 v = group_status_raw.strip()
+                 if v == "開啟":
+                      group["group_status"] = 1
+                 elif v == "關閉":
+                      group["group_status"] = 2
+                 elif v in ("1", "1.0"):
+                      group["group_status"] = 1
+                 elif v in ("2", "2.0"):
+                      group["group_status"] = 2
+
             ad_groups.append(group)
 
         #
@@ -478,10 +508,19 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
             platforms = _split_list(target_os_raw)
             platforms_int = []
             for p in platforms:
-                try:
-                    platforms_int.append(int(p))
-                except Exception:
-                    continue
+                # Handle string inputs (iOS/Android/Others) or Ints
+                p_lower = p.lower()
+                if "ios" in p_lower:
+                    platforms_int.append(1)
+                elif "android" in p_lower:
+                    platforms_int.append(2)
+                elif "others" in p_lower:
+                    platforms_int.append(3) # Assuming 3 for Others, or skip?
+                else:
+                    try:
+                        platforms_int.append(int(p))
+                    except Exception:
+                        continue
             audience["platform"] = platforms_int
 
         # 最高系統版本 → os_version as {min, max}
@@ -643,16 +682,44 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
         cr_btn = _get_str(row, "Call to Action")
         cr_iab = _get_str(row, "廣告類型")  # per mapping request
 
+        # 廣告文案狀態 (Creative Status)
+        cr_status_raw = _get_optional_str(row, "廣告文案狀態")
+        cr_status_val = None
+        if cr_status_raw:
+            v_cr = cr_status_raw.strip()
+            if v_cr == "開啟":
+                cr_status_val = 1
+            elif v_cr == "關閉":
+                cr_status_val = 2
+            elif v_cr in ("1", "1.0"):
+                cr_status_val = 1
+            elif v_cr in ("2", "2.0"):
+                cr_status_val = 2
+
         cr_mt_raw = row.get("廣告素材ID")
         cr_mt_id: Optional[int | str] = None
         if cr_mt_raw is not None and not pd.isna(cr_mt_raw):
             try:
-                cr_mt_id = int(str(cr_mt_raw).strip())
+                # Handle "101.0" or "101"
+                cr_mt_id = int(float(str(cr_mt_raw).strip()))
             except Exception:
-                cr_mt_id = str(cr_mt_raw).strip()
+                # If parsing fails, do NOT fallback to string.
+                # Valid ID must be int.
+                cr_mt_id = None
+
+        # Determine Creative ID (cr_id) for Update
+        cr_id_raw = row.get("廣告文案ID")
+        cr_id: Optional[int] = None
+        if cr_id_raw is not None and not pd.isna(cr_id_raw):
+             try:
+                 # Handle "123.0"
+                 cr_id = int(float(str(cr_id_raw).strip()))
+             except:
+                 pass
 
         # Add asset only if at least one meaningful field is present
-        if any([cr_name, cr_title, cr_desc, cr_btn, cr_iab, cr_mt_id]):
+        # Include cr_id in check
+        if any([cr_name, cr_title, cr_desc, cr_btn, cr_iab, cr_mt_id, cr_id]):
             asset: Dict[str, Any] = {
                 #"group_id": group.get("group_id"),
                 "cr_name": cr_name,
@@ -663,6 +730,14 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
                 "cr_mt_id": cr_mt_id if cr_mt_id is not None else 0,
                 "cr_icon_id": 0,
             }
+            if cr_id:
+                asset["cr_id"] = cr_id
+            if cr_status_val is not None:
+                # Use ad_status generally, or whatever the API needs. 
+                # Broadciel Client usually uses cr_status or ad_status depending on endpoint.
+                # CampaignBulkProcessor will extract it.
+                asset["cr_status"] = cr_status_val
+                
             ad_assets.append(asset)
 
     return {"campaign": list(campaigns.values())}
@@ -689,3 +764,523 @@ def parse_excel(file_bytes: bytes) -> Dict[str, object]:
 
     return dataframe_preview(df)
 
+
+def generate_excel_from_api_data(
+    campaigns: List[Dict[str, Any]],
+    ad_groups: List[Dict[str, Any]],
+    ad_creatives: List[Dict[str, Any]]
+) -> bytes:
+    """
+    Generate an Excel file (bytes) from the API data structures, 
+    matching the upload format exactly (46+3 columns) with Data Validation.
+    """
+    from openpyxl.worksheet.datavalidation import DataValidation
+    
+    # helper for status check
+    def _is_archived(obj, status_key):
+        # 3 = Archived, skip
+        val = obj.get(status_key)
+        return val == 3
+
+    # 1. Indexing for fast lookup
+    # Normalize IDs to int to avoid hash mismatches (e.g. "123" vs 123)
+    cpg_map = {}
+    for c in campaigns:
+        try:
+             cid = int(c.get("cpg_id"))
+             cpg_map[cid] = c
+        except (ValueError, TypeError):
+             continue
+    
+    layout: Dict[int, Any] = {}
+    
+    for cpg_id, c in cpg_map.items():
+        if _is_archived(c, "cpg_status"):
+            continue
+        layout[cpg_id] = {"self": c, "groups": {}}
+        
+    for g in ad_groups:
+        if _is_archived(g, "group_status"):
+            continue
+            
+        try:
+            cpg_id = int(g.get("cpg_id"))
+            grp_id = int(g.get("group_id"))
+        except (ValueError, TypeError):
+            continue
+            
+        if cpg_id in layout:
+            layout[cpg_id]["groups"][grp_id] = {"self": g, "creatives": []}
+        else:
+            pass
+            
+    # Track seen creatives to avoid duplicates (e.g. if API returns dupes)
+    seen_creatives = set()
+
+    for cr in ad_creatives:
+        # Check both ad_status and cr_status, sometimes one is used
+        status = cr.get("ad_status") or cr.get("cr_status")
+        if status == 3:
+            continue
+        
+        try:
+            cpg_id = int(cr.get("cpg_id"))
+            grp_id = int(cr.get("group_id"))
+            cr_id = int(cr.get("cr_id")) if cr.get("cr_id") is not None else None
+        except (ValueError, TypeError):
+             continue
+        
+        # Deduplication check
+        if cr_id and (grp_id, cr_id) in seen_creatives:
+            continue
+            
+        if cpg_id in layout:
+            if grp_id in layout[cpg_id]["groups"]:
+                layout[cpg_id]["groups"][grp_id]["creatives"].append(cr)
+                if cr_id:
+                    seen_creatives.add((grp_id, cr_id))
+                
+            else:
+                 pass
+        else:
+             pass
+             
+    # 2. Flatten to Rows
+    rows = []
+    
+    # Track previous IDs for Sparse Writing (Smart Edit)
+    last_cpg_id = None
+    last_grp_id = None
+    
+    # Define Column Mappings (same as before)
+    def _map_product_type(val):
+        return "app" if val == 1 else "web" 
+        
+    def _map_os(val):
+        if val == 1: return "iOS"
+        if val == 2: return "Android"
+        if val == 3: return "Others"
+        return "" 
+
+    def _map_status(val):
+        if val == 1: return "開啟"
+        if val == 2: return "關閉"
+        return "" 
+
+    def _map_market_goal(val):
+        m = {1: "品牌知名度", 2: "電商網上購買", 3: "增加網站流量", 5: "開發潛在客戶", 6: "網站互動"}
+        return m.get(val, "")
+
+    def _map_billing(val):
+        if val == 2: return "CPM"
+        if val == 3: return "CPC"
+        return ""
+        
+    def _map_conversion_goal_type(val):
+        m = {0: "帳戶預設設定", 1: "所有轉換", 2: "指定轉換目標"}
+        return m.get(val, "")
+        
+    def _map_convert_event(val):
+        m = {11: "點擊數", 13: "網頁瀏覽", 6: "完成註冊", 5: "搜尋", 3: "收藏", 4: "加入購物車", 2: "開始結帳", 1: "完成結帳"}
+        return m.get(val, "")
+
+    def _map_country_type(val):
+        if val == 1: return "包含"
+        if val == 2: return "不包含"
+        return ""
+        
+    def _map_list(lst):
+        if not lst: return ""
+        return ",".join(str(x) for x in lst)
+        
+    def _map_hours(utc_hours):
+        if not utc_hours: return ""
+        # User requested NO timezone adjustment (keep UTC)
+        local_hours = [str(h) for h in utc_hours]
+        return ",".join(local_hours)
+
+    def _map_list_obj_value(lst):
+        urls = []
+        for x in lst:
+            v = x.get("value", "")
+            if v.startswith('<img src="') and v.endswith('">'):
+                v = v[10:-2]
+            elif v.startswith("<img src='") and v.endswith("'>"):
+                v = v[10:-2]
+            urls.append(v)
+        return ",".join(urls)
+
+
+    # Re-implementing the nested loop structure with correct sparse check placement
+    
+    for cpg_id, c_node in layout.items():
+        c = c_node["self"]
+        groups_node = c_node["groups"]
+        
+        # Prepare Campaign Values
+        c_name = c.get("cpg_name", "")
+        c_id = c.get("cpg_id", "")
+        c_status = _map_status(c.get("cpg_status"))
+        c_budget = c.get("day_budget", "")
+        c_domain = c.get("adomain", "")
+        c_prod_type = _map_product_type(c.get("ad_channel"))
+        app_info = c.get("app", {})
+        c_app_name = app_info.get("ad_target", "")
+        c_os = _map_os(app_info.get("ad_platform"))
+        c_brand = c.get("sponsored", "")
+        
+        c_cols_data = [
+            c_name, c_id, c_status,
+            c_budget, c_domain, c_prod_type, c_app_name, c_os, c_brand
+        ]
+        
+        if not groups_node:
+            # No groups, write campaign data only
+            row = c_cols_data + [""] * 32 + [""] * 8
+            rows.append(row)
+            continue
+            
+        for grp_id, g_node in groups_node.items():
+            g = g_node["self"]
+            creatives = g_node["creatives"]
+            
+            # Prepare Group Values
+            g_name = g.get("group_name", "")
+            g_id = g.get("group_id", "")
+            g_status = _map_status(g.get("group_status"))
+            g_target = g.get("target_info", "")
+            g_click = ",".join(g.get("click_url", []))
+            g_imp = _map_list_obj_value(g.get("impression_url", []))
+            b_obj = g.get("budget", {})
+            g_market = _map_market_goal(b_obj.get("market_target"))
+            g_rev = _map_billing(b_obj.get("rev_type"))
+            g_price = b_obj.get("price", "")
+            g_day_budget = b_obj.get("day_budget", "")
+            cv_obj = b_obj.get("conversion_goal", {})
+            g_depth = _map_conversion_goal_type(cv_obj.get("type"))
+            g_cv_val = cv_obj.get("target_value", "")
+            g_cv_event = _map_convert_event(cv_obj.get("convert_event"))
+            sched = g.get("schedule", {})
+            g_start = sched.get("start_date", "")
+            g_end = sched.get("end_date", "")
+            g_week = _map_list(sched.get("week_days"))
+            g_hours = _map_hours(sched.get("hours"))
+            loc = g.get("location", {})
+            g_loc_type = _map_country_type(loc.get("country_type"))
+            g_country = _map_list(loc.get("country"))
+            aud = g.get("audience_target", {})
+            a_device = _map_list(aud.get("device_type"))
+            a_traffic = _map_list(aud.get("traffic_type"))
+            a_platform = _map_list(aud.get("platform"))
+            a_os_ver = "" 
+            a_browser = _map_list(aud.get("browser"))
+            a_age = _map_list(aud.get("age"))
+            a_gender = _map_list(aud.get("gender"))
+            cat = aud.get("category", {})
+            a_cat_type = _map_country_type(cat.get("type"))
+            a_cat_val = _map_list(cat.get("value"))
+            if not a_cat_val:
+                a_cat_type = ""
+            pix_include = []
+            pix_exclude = []
+            for p in aud.get("pixel_audience", []):
+                pid = p.get("id")
+                ptype = p.get("type")
+                if ptype == 1: pix_include.append(pid)
+                elif ptype == 2: pix_exclude.append(pid)
+            a_pix_inc = _map_list(pix_include)
+            a_pix_exc = _map_list(pix_exclude)
+            kw = aud.get("keywords", {})
+            a_ai_type = kw.get("type", "")
+            a_ai_val = _map_list(kw.get("value"))
+            
+            g_cols_data = [
+                g_name, g_id, g_status,
+                g_target, g_click, g_imp,
+                g_market, g_rev, g_price, g_day_budget, g_depth, g_cv_val, g_cv_event, g_start, g_end,
+                g_week, g_hours, g_loc_type, g_country, a_device, a_traffic, a_platform, a_os_ver, a_browser,
+                a_age, a_gender, a_cat_type, a_cat_val, a_pix_inc, a_pix_exc,
+                a_ai_type, a_ai_val
+            ]
+            
+            if not creatives:
+                c_cols = c_cols_data 
+                g_cols = g_cols_data 
+                     
+                row = c_cols + g_cols + [""] * 8
+                rows.append(row)
+                continue
+                
+            for cr in creatives:
+                cr_name = cr.get("cr_name", "")
+                cr_id = cr.get("cr_id", "")
+                cr_status = _map_status(cr.get("ad_status") or cr.get("cr_status"))
+                cr_iab = cr.get("iab", "")
+                cr_title = cr.get("cr_title", "")
+                cr_desc = cr.get("cr_desc", "")
+                cr_btn = cr.get("cr_btn_text", "")
+                cr_mt = cr.get("cr_mt_id") or cr.get("cr_mt") or ""
+                
+                cr_cols = [
+                    cr_name, cr_id, cr_status,
+                    cr_iab, cr_title, cr_desc, cr_btn, cr_mt
+                ]
+                
+                c_cols = c_cols_data
+                g_cols = g_cols_data 
+                    
+                row = c_cols + g_cols + cr_cols
+                rows.append(row)
+
+    # 3. Create DataFrame
+    # group_status inserted at index 11
+    # creative_status inserted at index 43
+    columns = [
+        "廣告活動名稱", "廣告活動ID", "廣告活動狀態",
+        "每日預算(NT$)", "主網域名稱", "產品類型", "APP名稱", "操作系統", "品牌名稱",
+        "廣告群組名稱", "廣告群組ID", "廣告群組狀態", "網站推廣連結", "第三方點擊追蹤連結(Grouped)",
+        "第三方曝光追蹤連結(Grouped)",
+        "行銷目標", "計費模式", "固定出價", "每日預算", "深度轉換目標", "轉換價值", "轉化目標", "開始日期", "結束日期",
+        "投放星期數", "投放時間段", "地理位置", "國家", "設備類型", "流量類型", "受眾操作系統", "最高系統版本", "瀏覽器",
+        "年齡", "性別", "投放興趣選項", "投放興趣受眾", "自定義受眾（包含）", "自定義受眾（不包含）",
+        "AI語意擴充選項", "AI語意擴充關鍵字", 
+        "廣告文案名稱", "廣告文案ID", "廣告文案狀態",
+        "廣告類型", "廣告標題", "廣告內文", "Call to Action", "廣告素材ID"
+    ]
+    
+    df = pd.DataFrame(rows, columns=columns)
+    
+    # 4. Write to Bytes using OpenPyXL directly for advanced features
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+        workbook = writer.book
+        worksheet = writer.sheets['Sheet1']
+        
+        # --- Styles ---
+        from openpyxl.styles import PatternFill, Border, Side, Font, Alignment
+        
+        # Fonts
+        font_header = Font(bold=True, size=12)
+        font_data = Font(size=12)
+        
+        # Colors (Light Pastel tones)
+        # Campaign: Light Blue
+        color_cpg = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
+        # Ad Group: Light Green
+        color_grp = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+        # Creative: Light Yellow/Orange
+        color_crt = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+
+        # Border Styles
+        # Data Gridline: Light Grey (Simulating default gridlines)
+        grid_border = Border(
+            left=Side(style='thin', color='D9D9D9'), 
+            right=Side(style='thin', color='D9D9D9'), 
+            top=Side(style='thin', color='D9D9D9'), 
+            bottom=Side(style='thin', color='D9D9D9')
+        )
+        
+        # Adjust Header Row Height (1.5x approx default 20 -> 30)
+        worksheet.row_dimensions[1].height = 30
+        
+        # Alignment for Header
+        align_center = Alignment(vertical='center', horizontal='center')
+
+        # Apply Header Colors and Font
+        # Helper to apply fill and font to header range
+        def _style_header(start_col_idx, end_col_idx, fill):
+            # openpyxl is 1-based indexing for rows/cols
+            for c_idx in range(start_col_idx, end_col_idx + 1):
+                cell = worksheet.cell(row=1, column=c_idx)
+                cell.fill = fill
+                cell.font = font_header
+                # cell.border = header_border  # Removed per request
+                cell.border = grid_border # Use same light grey border as data
+                cell.alignment = align_center
+
+        _style_header(1, 9, color_cpg)   # Campaign
+        _style_header(10, 41, color_grp) # Ad Group
+        _style_header(42, 49, color_crt) # Creative
+        
+        
+        # Apply Font, Gridlines AND Background Colors to Data Range
+        # Iterate over all rows from 2 to max_row
+        
+        # Determine strict data range
+        max_r = len(df) + 1 # +1 for header
+        max_c = len(columns)
+        
+        for r_idx in range(2, max_r + 1):
+            for c_idx in range(1, max_c + 1):
+                cell = worksheet.cell(row=r_idx, column=c_idx)
+                cell.font = font_data
+                # Apply light grey gridline
+                cell.border = grid_border
+                
+                # Apply Background Color matching Header
+                if 1 <= c_idx <= 9:
+                    cell.fill = color_cpg
+                elif 10 <= c_idx <= 41:
+                    cell.fill = color_grp
+                elif 42 <= c_idx <= 49:
+                    cell.fill = color_crt
+                
+        # --- 2. Hide Default Gridlines (Requests 2 & 3) ---
+        # "完全沒資料的row/col 把預設的框線也消除，全白的那種"
+        worksheet.sheet_view.showGridLines = False
+
+        # --- 1. Auto-fit Column Width (Request 1) ---
+        # Heuristic: Iterate rows to find max length per column.
+        # Since we have sparse data (blanks), we check valid cells.
+        # openpyxl requires setting 'worksheet.column_dimensions[letter].width'
+        
+        # Initialize max_lengths with header lengths
+        # columns is list of strings
+        # headers are in row 1
+        from openpyxl.utils import get_column_letter
+        
+        # Specific columns to widen (2x)
+        double_width_cols = {
+            "產品類型", "操作系統", "行銷目標", "計費模式", 
+            "受眾操作系統", "最高系統版本", "深度轉換目標", "轉換價值", "轉化目標"
+        }
+
+        # We process header first
+        column_widths = {}
+        for i, col_name in enumerate(columns):
+            # 1.5 factor for bold font and some padding
+            width = len(str(col_name)) * 1.5 + 2
+            
+            # Check if this column needs doubling (based on name)
+            # Handle duplicate names logic: The name in 'columns' list is what we check.
+            if col_name in double_width_cols:
+                # User asked for "column width add 2 times" (width * 2 presumably, or increase significantly)
+                # I will store a multiplier.
+                pass # Applied below
+                
+            column_widths[i+1] = width
+
+        # Process data rows
+        # Since dataframe can be large, iterating again might be slow but OK for this scale (~few k rows).
+        # We can iterate the dataframe 'rows' list we constructed earlier 'rows' variable, which matches Excel except sparse logic.
+        # Actually 'rows' variable in the loops above handles the sparse logic logic?
+        # Yes, 'rows' list contains the actual data to be written.
+        # Iterate 'rows' (which are lists of values)
+        for r in rows:
+            for i, val in enumerate(r):
+                if val:
+                    val_len = len(str(val))
+                    # Adjust factor for chinese characters (width ~2) vs english (width ~1)
+                    # Simple heuristic: len * 1.3 + padding
+                    # Or count bytes?
+                    # Let's use simple length * 1.8 for safety to fit font 12
+                    curr_w = val_len * 1.8 
+                    if curr_w > column_widths[i+1]:
+                        column_widths[i+1] = curr_w
+        
+        # Set widths
+        for col_idx, width in column_widths.items():
+            # Apply doubling for specific columns
+            # Get column name from our list (0-based)
+            if col_idx <= len(columns):
+                col_name = columns[col_idx-1]
+                if col_name in double_width_cols:
+                    width = width * 2
+            
+            # Cap width to avoid overly wide columns (e.g. long URL)
+            final_width = min(width, 100) # Increased cap for doubled columns
+            col_letter = get_column_letter(col_idx)
+            worksheet.column_dimensions[col_letter].width = final_width
+                    
+        # --- Data Validation ---
+        # Max row for validation
+        dv_max = max_r + 100
+        
+        # Helper to add DV
+        def _add_dv(col_letter, options_list, prompt_title=""):
+            # Ensure options are strings and comma separated within double quotes
+            quoted_opts = [f'{o}' for o in options_list]
+            formula = f'"{",".join(quoted_opts)}"'
+            
+            dv = DataValidation(type="list", formula1=formula, allow_blank=True)
+            dv.error = '請從下拉選單中選擇有效的值'
+            dv.errorTitle = '輸入錯誤'
+            dv.prompt = '請從選單中選擇'
+            dv.promptTitle = prompt_title
+            
+            worksheet.add_data_validation(dv)
+            dv.add(f'{col_letter}2:{col_letter}{dv_max}')
+
+        # 1. Status Columns (C, L, AS)
+        _add_dv("C", ["開啟", "關閉"], "廣告活動狀態")
+        _add_dv("L", ["開啟", "關閉"], "廣告群組狀態")
+        
+        # Creative Status: 
+        # Index 44 -> AR (0-based 44 -> 45th col -> 45-26=19 -> S)
+        # Wait, let's re-verify Col 44.
+        # A=1... Z=26. AA=27.
+        # Col 1 = A.
+        # Col 45. 45-26 = 19. 19th char is S. (A=1... S=19).
+        # So AR is 18?
+        # R is 18th letter. AR is 26+18 = 44.
+        # So AR is column 44.
+        # My Columns list has "廣告文案狀態" at index 44.
+        # Python list index 44 is the 45th element.
+        # So it is Column 45.
+        # Column 45 is AS. (26+19=45). 
+        # Previous logic: 40 -> AN. (26+14=40). 39 index is 40th col -> AN. Correct.
+        # 44 index is 45th col -> AS. 
+        # So Creative Status WAS "AS". My previous code had "AS" then I changed to "AR"?
+        # Let's check listing again.
+        # ... AP(41), AQ(42), AR(43), AS(44)?
+        # Index 39=AN.
+        # Index 40=AO.
+        # Index 41=AP. (廣告文案名稱)
+        # Index 42=AQ. (廣告文案ID)
+        # Index 43=AR. (廣告文案狀態) -> THIS IS IT.
+        # Wait, check columns list provided in code:
+        # ... "AI語意擴充關鍵字"(40)
+        # "廣告文案名稱"(41)
+        # "廣告文案ID"(42)
+        # "廣告文案狀態"(43)
+        # So "廣告文案狀態" is index 43.
+        # Index 43 is the 44th column.
+        # 44th column -> 44-26 = 18 -> R. 
+        # So AR is indeed correct for Index 43.
+        # My apologies, I need to be super precise.
+        
+        # Col Index 43 (0-based) -> Excel Col 44 -> AR.
+        _add_dv("AR", ["開啟", "關閉"], "廣告文案狀態")
+
+        # 2. 產品類型 (Col 5 -> F)
+        _add_dv("F", ["web", "app"], "產品類型")
+
+        # 3. 操作系統 (APP) (Col 7 -> H)
+        _add_dv("H", ["iOS", "Android", "Others"], "操作系統")
+        
+        # 4. 行銷目標 (Col 15 -> P) (Index 15 -> 16th col -> P)
+        _add_dv("P", ["品牌知名度", "電商網上購買", "增加網站流量", "開發潛在客戶", "網站互動"], "行銷目標")
+
+        # 5. 計費模式 (Col 16 -> Q) (Index 16 -> 17th col -> Q)
+        _add_dv("Q", ["CPM", "CPC"], "計費模式")
+
+        # 6. 深度轉換目標 (Col 19 -> T) (Index 19 -> 20th col -> T)
+        _add_dv("T", ["帳戶預設設定", "所有轉換", "指定轉換目標"], "深度轉換目標")
+
+        # 6.5 轉化目標 (Col 21 -> V)
+        _add_dv("V", ["點擊數", "網頁瀏覽", "完成註冊", "搜尋", "收藏", "加入購物車", "開始結帳", "完成結帳"], "轉化目標")
+
+        # 7. 地理位置 (Col 26 -> AA) (Index 26 -> 27th col -> AA)
+        _add_dv("AA", ["包含", "不包含"], "地理位置")
+        
+        # 8. 受眾操作系統 (Col 30 -> AE)
+        _add_dv("AE", ["iOS", "Android", "Others"], "受眾操作系統")
+        
+        # 9. 投放興趣選項 (Col 35 -> AJ) (Index 35 -> 36th col -> AJ)
+        _add_dv("AJ", ["包含", "不包含"], "投放興趣選項")
+        
+        # 10. AI語意擴充選項 (Col 39 -> AN) (Index 39 -> 40th col -> AN)
+        _add_dv("AN", ["1", "2"], "AI語意擴充選項")
+        
+    return output.getvalue()

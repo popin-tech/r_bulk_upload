@@ -66,12 +66,89 @@ function handleAccountChange(event) {
     selectedAccount = $(event.target).val();
     console.log("[handleAccountChange] selected:", selectedAccount);
 
+
     // Reset previous sync results on account change
     hideLastResultBtn();
 
     if (selectedAccount) {
         console.log("[handleAccountChange] Account selected, showing Step 2");
         showStep2();
+        // Show download button
+        $("#download-structure-btn").fadeIn();
+    } else {
+        $("#download-structure-btn").hide();
+    }
+}
+
+/**
+ * Handle Download Structure button click
+ */
+async function handleDownloadStructure() {
+    console.log("[handleDownloadStructure] clicked");
+
+    if (!selectedAccount) {
+        showToast("Please select an account first", "error");
+        return;
+    }
+
+    const $btn = $("#download-structure-btn");
+    const originalText = $btn.html();
+
+    // Disable button and show loading
+    $btn.prop("disabled", true);
+    $btn.html(`
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        Downloading...
+    `);
+
+    try {
+        const resp = await fetch("/api/download-excel", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ account_email: selectedAccount })
+        });
+
+        if (!resp.ok) {
+            const errData = await resp.json();
+            throw new Error(errData.error || "Download failed");
+        }
+
+        const data = await resp.json();
+        if (data.status !== "ok" || !data.file_base64) {
+            throw new Error(data.error || "Invalid response from server");
+        }
+
+        // Convert Base64 to Blob
+        const byteCharacters = atob(data.file_base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+        // Trigger download
+        const url = window.URL.createObjectURL(blob);
+        const $a = $('<a>', {
+            href: url,
+            download: data.filename || `structure_${selectedAccount}.xlsx`
+        });
+        $('body').append($a);
+        $a[0].click();
+        window.URL.revokeObjectURL(url);
+        $a.remove();
+
+        showToast("Structure downloaded successfully!", "success");
+
+    } catch (err) {
+        console.error("[handleDownloadStructure] error:", err);
+        showToast(`Error downloading structure: ${err.message}`, "error");
+    } finally {
+        // Restore button
+        $btn.prop("disabled", false);
+        $btn.html(originalText);
     }
 }
 
@@ -573,6 +650,7 @@ $(document).ready(function () {
     $("#generate-preview-btn").on("click", generatePreview);
     $("#confirm-preview-btn").on("click", handleConfirmSync);
     $("#view-last-result-btn").on("click", viewLastResult);
+    $("#download-structure-btn").on("click", handleDownloadStructure);
 
     // Initialize drag and drop
     initializeDragAndDrop();
@@ -584,3 +662,4 @@ window.downloadTemplate = downloadTemplate;
 window.generatePreview = generatePreview;
 window.syncToCommit = syncToCommit;
 window.viewLastResult = viewLastResult;
+window.handleDownloadStructure = handleDownloadStructure;

@@ -99,14 +99,28 @@ class CampaignBulkProcessor:
             try:
                 result.retry_count = attempt
                 
-                # 步驟 1: 創建 Campaign
+                # 步驟 1: 處理 Campaign (Create or Update)
                 failed_step = "campaign"
                 campaign_request_body = self._extract_campaign_data(campaign_data)
-                print("=== 建立campaign ===")
-                created_campaign_id = self.client.create_campaign(campaign_request_body)
+                
+                # Check for existing ID to determine operation
+                cpg_id = campaign_data.get("cpg_id")
+                if cpg_id:
+                    # Update existing campaign
+                    print(f"=== 更新campaign (ID: {cpg_id}) ===")
+                    # Ensure ID is in the request body (client needs it for URL)
+                    campaign_request_body["cpg_id"] = cpg_id
+                    success = self.client.update_campaign(campaign_request_body)
+                    if not success:
+                         raise Exception(f"Campaign update failed for ID {cpg_id}")
+                    created_campaign_id = cpg_id
+                else:
+                    # Create new campaign
+                    print("=== 建立campaign ===")
+                    created_campaign_id = self.client.create_campaign(campaign_request_body)
                 
                 if not created_campaign_id:
-                    raise Exception("Campaign creation returned empty ID")
+                    raise Exception("Campaign creation/update returned empty ID")
                 
                 result.campaign_id = created_campaign_id
                 
@@ -165,12 +179,24 @@ class CampaignBulkProcessor:
         created_ad_group_id = None
         
         try:
-            # 創建 Ad Group
+            # 處理 Ad Group (Create or Update)
             ad_group_request_body = self._extract_ad_group_data(ad_group_data, campaign_id)
-            created_ad_group_id = self.client.create_ad_group(ad_group_request_body)
+            
+            group_id = ad_group_data.get("group_id")
+            if group_id:
+                 # Update existing ad group
+                 print(f"=== 更新 Ad Group (ID: {group_id}) ===")
+                 ad_group_request_body["group_id"] = group_id
+                 success = self.client.update_ad_group(ad_group_request_body)
+                 if not success:
+                      raise Exception(f"Ad Group update failed for ID {group_id}")
+                 created_ad_group_id = group_id
+            else:
+                 # Create new ad group
+                 created_ad_group_id = self.client.create_ad_group(ad_group_request_body)
             
             if not created_ad_group_id:
-                raise Exception("Ad Group creation returned empty ID")
+                raise Exception("Ad Group creation/update returned empty ID")
             
             result.ad_group_id = created_ad_group_id
             
@@ -215,10 +241,24 @@ class CampaignBulkProcessor:
         
         try:
             creative_request_body = self._extract_creative_data(ad_asset_data, ad_group_id)
-            created_creative_id = self.client.create_creative(creative_request_body)
+            
+            cr_id = ad_asset_data.get("cr_id")
+            if cr_id:
+                # Update existing creative
+                # Ensure ID is passed to extraction or manually added if extract doesn't handle it
+                # Logic: extract_creative_data doesn't extract cr_id because create doesn't need it.
+                # So we add it here manually.
+                creative_request_body["cr_id"] = cr_id
+                print(f"=== 更新 Creative (ID: {cr_id}) ===")
+                success = self.client.update_creative(creative_request_body)
+                if not success:
+                     raise Exception(f"Creative update failed for ID {cr_id}")
+                created_creative_id = cr_id
+            else:
+                created_creative_id = self.client.create_creative(creative_request_body)
             
             if not created_creative_id:
-                raise Exception("Creative creation returned empty ID")
+                raise Exception("Creative creation/update returned empty ID")
             
             result.creative_id = created_creative_id
             result.success = True
@@ -247,6 +287,14 @@ class CampaignBulkProcessor:
         # 添加 app 物件（只有在 ad_channel=1 時）
         if campaign_data.get("ad_channel") == 1 and "app" in campaign_data:
             campaign_request["app"] = campaign_data["app"]
+            
+        # status
+        # Update always requires status (HTTP 400 if missing).
+        # Default to 1 (Active) if not in data.
+        if "cpg_status" in campaign_data:
+            campaign_request["cpg_status"] = campaign_data["cpg_status"]
+        else:
+            campaign_request["cpg_status"] = 1
         
         return campaign_request
     
@@ -277,6 +325,13 @@ class CampaignBulkProcessor:
         # 添加 audience_target 物件
         if "audience_target" in ad_group_data:
             ad_group_request["audience_target"] = ad_group_data["audience_target"]
+            
+        # status
+        # Same logic as campaign: Update might require status
+        if "group_status" in ad_group_data:
+            ad_group_request["group_status"] = ad_group_data["group_status"]
+        else:
+            ad_group_request["group_status"] = 1
         
         return ad_group_request
     
@@ -295,6 +350,13 @@ class CampaignBulkProcessor:
             "cr_icon_id": ad_asset_data.get("cr_icon_id", 0)
         }
         
+        
+        # status (using cr_status key for creation)
+        if "cr_status" in ad_asset_data:
+            creative_request["cr_status"] = ad_asset_data["cr_status"]
+        else:
+            creative_request["cr_status"] = 1
+            
         return creative_request
     
     def _generate_detailed_results(self, results: List[CampaignResult], campaigns_data: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
