@@ -2,6 +2,7 @@ import os
 import json
 from pathlib import Path
 from io import BytesIO
+import base64
 from dataclasses import asdict
 from typing import Any, Dict
 from openpyxl import Workbook
@@ -10,7 +11,7 @@ from flask import Flask, jsonify, request, send_from_directory, render_template,
 
 from services.auth import AuthError, GoogleUser, verify_google_token
 from services.broadciel_client import BroadcielClient
-from services.upload_service import UploadParsingError, parse_excel, parse_excel_df, excel_to_campaign_json
+from services.upload_service import UploadParsingError, parse_excel, parse_excel_df, excel_to_campaign_json, generate_excel_from_api_data
 from services.campaign_bulk_processor import CampaignBulkProcessor
 
 app = Flask(__name__)
@@ -234,6 +235,56 @@ def upload_preview():
     return jsonify({"preview": preview, "uploaded_by": asdict(user)})
 
 
+
+@app.route("/api/download-excel", methods=["POST"])
+def download_excel():
+    user = _require_user()
+    if not isinstance(user, GoogleUser):
+        return user
+
+    data = request.get_json() or {}
+    account_email = data.get("account_email")
+    if not account_email:
+        return _error("Missing account_email parameter.", 400)
+
+    try:
+        # Get Token
+        raw_token = _get_token_for_email(account_email)
+        if not raw_token:
+            return _error(f"No raw token found for account: {account_email}", 400)
+            
+        client = _broadciel_client(account_email, raw_token)
+        
+        # Fetch All Data
+        app.logger.info(f"Fetching all data for {account_email}...")
+        campaigns = client.fetch_all_campaigns()
+        groups = client.fetch_all_ad_groups()
+        creatives = client.fetch_all_ad_creatives()
+        
+        app.logger.info(f"Fetched {len(campaigns)} campaigns, {len(groups)} groups, {len(creatives)} creatives.")
+        
+        # Generate Excel
+        excel_bytes = generate_excel_from_api_data(campaigns, groups, creatives)
+        
+        # Base64 Encode
+        b64_data = base64.b64encode(excel_bytes).decode('utf-8')
+        
+        filename = f"structure_{account_email}_{len(campaigns)}cpg.xlsx"
+        
+        return jsonify({
+            "status": "ok",
+            "file_base64": b64_data,
+            "filename": filename
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Download failed: {str(e)}")
+        # Print stack trace for debugging
+        import traceback
+        traceback.print_exc()
+        return _error(f"Download failed: {str(e)}", 500)
+
+
 @app.route("/api/commit", methods=["POST"])
 def commit():
     # 1) auth
@@ -313,229 +364,7 @@ def commit():
 
 
 
-# 測試用可刪除 - 單純測試 Campaign API
-@app.route("/api/test-single-campaign", methods=["GET"])  
-def test_single_campaign():
-    """測試用可刪除 - 測試單個 Campaign 創建（無需認證）"""
-    # 測試用可刪除 - 跳過認證檢查，方便直接用瀏覽器測試
-    # user = _require_user()
-    # if not isinstance(user, GoogleUser):
-    #     return user
-        
-    # 測試用可刪除 - 單一 Campaign 測試資料
-    test_campaign_data = {
-        "cpg_name": "test_campaign_2",   # 廣告活動名稱
-            "day_budget": 0.01,                  # 你之後可從 Excel 帶入
-            "app": {
-                "ad_platform": 1,                # R 平台固定值
-                "ad_target": "12345"             # 可從 Excel 帶入
-            },
-            "adomain": "example.com",            # 廣告主 domain，由你決定
-            "sponsored": "ad_group_name",  # 看起來比較像「贊助來源」欄位
-            "ad_channel": 1 
-    }
-    
-    test_api_token = "U2FsdGVkX18Mia3m6wmozC76iVv8PAlUqHmKjyPmemEriK2voFBZPhH9mfnjFwUtxeNe49pqJNkANXskJcn+TDWHxEBCHOfmzIZvucUQUotflVNbc6wCwv4Qm9dKK+jY+Q5nLKqBKGS+6kSvOiJSBGBt4682bUm7YUejqTuEvUMYW/3jB/QzNxlTBO38EsXY6sX3XTJfGGQjXzs8D2Kl4P1ZPD5Aog6okNkB7beHJOhfD3zLptKQyTV4yxAD/MKCqGolPhefq7cb9LGFrPaMIs0ne5cdJuaKIgdEP0FGAEY="
-    
-    client = _broadciel_client()
-    try:
-        # 測試用可刪除 - 直接呼叫 create_campaign
-        campaign_id = client.create_campaign(test_campaign_data, test_api_token) 
-        
-        return jsonify({
-            "status": "test_success",
-            "message": "測試用可刪除 - 單一 Campaign 創建成功",
-            "campaign_id": campaign_id,
-            "test_data": test_campaign_data
-        })
-        
-    except Exception as exc:
-        return jsonify({
-            "status": "test_error",
-            "message": "測試用可刪除 - 單一 Campaign 創建失敗", 
-            "error": str(exc),
-            "test_data": test_campaign_data
-        })
 
-
-# 測試用可刪除 - 單純測試 Ad Group API
-@app.route("/api/test-single-ad-group", methods=["GET"])  
-def test_single_ad_group():
-    """測試用可刪除 - 測試單個 Ad Group 創建（無需認證）"""
-    # 測試用可刪除 - 跳過認證檢查，方便直接用瀏覽器測試
-    # user = _require_user()
-    # if not isinstance(user, GoogleUser):
-    #     return user
-        
-    # 測試用可刪除 - 單一 Ad Group 測試資料
-    test_ad_group_data = {
-        "cpg_id": 87779,
-        "group_name": "test_benson1208-03",
-        "target_info": "https://wellness.tw/contents/0003/test",
-        "click_url": [
-            "https://example.com/"
-        ],
-        "impression_url": [
-            {
-                "type": 1,
-                "value": "https://example.com"
-            }
-        ],
-        "budget": {
-            "market_target": 1,
-            "rev_type": 3,
-            "price": 0.16,
-            "day_budget": 10,
-            "conversion_goal": {
-                "type": 0,
-                "target_value": 1,
-                "convert_event": 0
-            }
-        },
-        "schedule": {
-            "start_date": "",
-            "end_date": "",
-            "week_days": [
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7
-            ],
-            "hours": [
-                0,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                9,
-                10,
-                11,
-                12,
-                13,
-                14,
-                15,
-                16,
-                17,
-                18,
-                19,
-                20,
-                21,
-                22,
-                23
-            ]
-        },
-        "location": {
-            "country": [
-                "TWN"
-            ],
-            "country_type": 1
-        },
-        "audience_target": {
-            "device_type": [],
-            "traffic_type": [],
-            "platform": [],
-            "browser": [],
-            "age": [],
-            "gender": [],
-            # "os_version": {
-            #     "min": 16,
-            #     "max": 16
-            # },
-            "ip": {
-                "id": 0,
-                "type": 1
-            },
-            "site": {
-                "id": 0,
-                "type": 1
-            },
-            "category": {
-                "value": [
-                    "IAB1"
-                ],
-                "type": 1
-            },
-            "keywords": {
-                "value": [
-                    "棒棒"
-                ],
-                "type": 1
-            },
-            "pixel_audience": []
-        }
-    }
-    
-    test_api_token = "U2FsdGVkX1+2iGWq/7iDuuv7GIifk+uUwHVN2gKTuh4ZMx2ny6aEo+1FUgIDpmzmb2BfRnVcpIJJQlQjgtVjDzz2pVe5XmEZtqUtCtYugCe46rebgJ23fejjx7OcRviu6NKVZOX+gxsVvv1uV/dKkCbUUZrCRx6gbjRfz5a850eboiAA1D78XZ8pJS5686A6dKzbF9b1dsCkGVZsPov3+TQPznQhVYJK/qnpvuqn3VXDZ3jWAJhEpHbQUtTkMdVaiMArggwDdiAiu71YF0ZUM+o9MrSFRGUxwhcr6La+rIk="
-    
-    client = _broadciel_client()
-    try:
-        # 測試用可刪除 - 直接呼叫 create_ad_group
-        ad_group_id = client.create_ad_group(test_ad_group_data, test_api_token) 
-        
-        return jsonify({
-            "status": "test_success",
-            "message": "測試用可刪除 - 單一 Ad Group 創建成功",
-            "ad_group_id": ad_group_id,
-            "test_data": test_ad_group_data
-        })
-        
-    except Exception as exc:
-        return jsonify({
-            "status": "test_error",
-            "message": "測試用可刪除 - 單一 Ad Group 創建失敗", 
-            "error": str(exc),
-            "test_data": test_ad_group_data
-        })
-
-
-# 測試用可刪除 - 單純測試 Ad Creative API
-@app.route("/api/test-single-ad-creative", methods=["GET"])  
-def test_single_ad_creative():
-    """測試用可刪除 - 測試單個 Ad Creative 創建（無需認證）"""
-    # 測試用可刪除 - 跳過認證檢查，方便直接用瀏覽器測試
-    # user = _require_user()
-    # if not isinstance(user, GoogleUser):
-    #     return user
-        
-    # 測試用可刪除 - 單一 Ad Creative 測試資料
-    test_ad_creative_data = {
-        "group_id": 95272,
-        "cr_name": "test_creative_benson1210",
-        "cr_title": "測試廣告創意標題",
-        "cr_desc": "測試廣告創意描述內容",
-        "cr_btn_text": "立即下載",
-        "iab": "IAB1",
-        "cr_mt_id": 28575
-    }
-    
-    test_api_token = "U2FsdGVkX1+atmcs9/XLTTvV+BXBL3s8fE30HE8uxlWUokXigx+ZodKV7lcejU1kAACEziu0aOFwgZcvopUrkBQ1MEtXhRvlFyfq4s8oCfoQsMloNAdHGkVZFaii+yllkVqCCBeM08xw7yPWxf2i9sIS713MXxYKJgHf+pM3AmbtyiwjZr4enQXpVXIWGAG1A0CZ2tQw82vI50Y8iRrZMWAGegOogONnEnIpGsUWQ2iHjZVtKtyX+5d3hrLA37tQzBnU4m9IRrrm9Vnr6B0mvlNkr7bjnf2YfxFVGJcNaHM="
-    
-    client = _broadciel_client()
-    try:
-        # 測試用可刪除 - 直接呼叫 create_creative
-        creative_id = client.create_creative(test_ad_creative_data, test_api_token) 
-        
-        return jsonify({
-            "status": "test_success",
-            "message": "測試用可刪除 - 單一 Ad Creative 創建成功",
-            "creative_id": creative_id,
-            "test_data": test_ad_creative_data
-        })
-        
-    except Exception as exc:
-        return jsonify({
-            "status": "test_error",
-            "message": "測試用可刪除 - 單一 Ad Creative 創建失敗", 
-            "error": str(exc),
-            "test_data": test_ad_creative_data
-        })
 
 
 if app.config.get("ENABLE_FRONTEND", False):
