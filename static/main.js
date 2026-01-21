@@ -13,7 +13,7 @@ const accountSelect = document.getElementById("account-select");
 let idToken = "";
 let lastPreview = null;
 
-console.log("[main.js] Loaded");
+console.log("[main.js] Loaded (20260121)");
 console.log("[main.js] DOM refs:", {
   uploadSection,
   previewSection,
@@ -94,12 +94,16 @@ async function loadAccounts() {
     placeholder.textContent = "Select an account";
     accountSelect.appendChild(placeholder);
 
-    accounts.forEach((email) => {
+    accounts.forEach((item) => {
       const opt = document.createElement("option");
-      opt.value = email;
-      opt.textContent = email;
+      // item is {name, email}
+      opt.value = item.email;
+      const label = item.name ? `${item.name}` : item.email;
+      opt.textContent = label;
       accountSelect.appendChild(opt);
     });
+
+
 
     console.log("[loadAccounts] loaded accounts:", accounts.length);
   } catch (err) {

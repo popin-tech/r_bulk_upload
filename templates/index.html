@@ -1,71 +1,65 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Broadciel Campaign Management Platform</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
-    <script src="{{ url_for('static', filename='main.js') }}" defer></script>
-    <script src="https://accounts.google.com/gsi/client" defer></script>
-  </head>
-  <body>
-    <main class="container">
-      <section id="auth-section">
-        <div id="title-row">
-          <img src="{{ url_for('static', filename='broadciellogo.png') }}" id="broadciel-logo" />
-          <h1>Broadciel Campaign Management Platform</h1>
-        </div>
-        <div id="g_id_onload"
-             data-client_id="439393162392-cjutf0jdpofs237mqu52goiafq3gqvtg.apps.googleusercontent.com"
-             data-context="signin"
-             data-ux_mode="popup"
-             data-callback="handleGoogleCredential">
-        </div>
-        <div id="g_id_signin_container">
-          <div class="g_id_signin" data-type="standard"></div>
-        </div>
-        <p id="user-info"></p>
-      </section>
 
-      <div id="template-section" class="hidden">
-        <div class="fab-wrapper">
-          <button
-            id="download-template-button"
-            class="fab"
-            title="Download Excel Template"
-          >
-            ⬇
-          </button>
-          <span class="fab-label">Download Template</span>
-        </div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Broadciel Campaign Management Platform</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  <script src="{{ url_for('static', filename='main.js') }}" defer></script>
+  <script src="https://accounts.google.com/gsi/client" defer></script>
+</head>
+
+<body>
+  <main class="container">
+    <section id="auth-section">
+      <div id="title-row">
+        <img src="{{ url_for('static', filename='broadciellogo.png') }}" id="broadciel-logo" />
+        <h1>Broadciel Campaign Management Platform</h1>
       </div>
+      <div id="g_id_onload" data-client_id="439393162392-cjutf0jdpofs237mqu52goiafq3gqvtg.apps.googleusercontent.com"
+        data-context="signin" data-ux_mode="popup" data-callback="handleGoogleCredential">
+      </div>
+      <div id="g_id_signin_container">
+        <div class="g_id_signin" data-type="standard"></div>
+      </div>
+      <p id="user-info"></p>
+    </section>
+
+    <div id="template-section" class="hidden">
+      <div class="fab-wrapper">
+        <button id="download-template-button" class="fab" title="Download Excel Template">
+          ⬇
+        </button>
+        <span class="fab-label">Download Template</span>
+      </div>
+    </div>
 
 
-      <section id="account-section" class="card hidden">
-        <h2>Select an Account</h2>
-        <select id="account-select" name="account_email" required>
-          <option value="" disabled selected>Select an account</option>
-        </select>
-      </section>
+    <section id="account-section" class="card hidden">
+      <h2>Select an Account</h2>
+      <select id="account-select" name="account_email" required>
+        <option value="" disabled selected>Select an account</option>
+      </select>
+    </section>
 
 
-            
-      <section id="upload-section" class="card hidden">
-        <h2>Upload Excel</h2>
-        <form id="upload-form">
-          <input type="file" id="sheet" name="sheet" accept=".xlsx,.xls" required />
-          <button type="submit">Generate Preview</button>
-        </form>
-      </section>
 
-      <section id="preview-section" class="card hidden">
-        <h2>Preview</h2>
-        <div id="preview-meta"></div>
-        <div id="preview-table"></div>
-        <button id="commit-button">Confirm &amp; Sync</button>
-      </section>
-    </main>
-  </body>
+    <section id="upload-section" class="card hidden">
+      <h2>Upload Excel</h2>
+      <form id="upload-form">
+        <input type="file" id="sheet" name="sheet" accept=".xlsx,.xls" required />
+        <button type="submit">Generate Preview</button>
+      </form>
+    </section>
+
+    <section id="preview-section" class="card hidden">
+      <h2>Preview</h2>
+      <div id="preview-meta"></div>
+      <div id="preview-table"></div>
+      <button id="commit-button">Confirm &amp; Sync</button>
+    </section>
+  </main>
+</body>
+
 </html>
-
-
