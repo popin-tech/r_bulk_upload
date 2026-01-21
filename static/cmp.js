@@ -44,7 +44,12 @@ async function loadAccounts() {
             }));
         });
 
+
+
         console.log("[loadAccounts] populated with", accounts.length, "accounts");
+
+
+
     } catch (err) {
         console.error("[loadAccounts] error:", err);
         $accountSelect.html('<option value="">Error loading accounts</option>');
