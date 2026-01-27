@@ -247,6 +247,10 @@ class BroadcielClient:
             
         if not resp.ok or response_data.get("code") != 200:
             error_message = response_data.get('message', 'Unknown error')
+            
+            if "Material Not Found" in error_message:
+                error_message = f"系統無法對應到這個素材id ，請確認素材id 或是素材跨帳戶權限 ({error_message})"
+            
             errors_detail = response_data.get('errors')
             if errors_detail:
                 import json
@@ -449,6 +453,10 @@ class BroadcielClient:
         # 檢查 HTTP 狀態碼
         if not resp.ok:
             error_message = response_data.get('message', 'Unknown error')
+            
+            if "Material Not Found" in error_message:
+                error_message = f"系統無法對應到這個素材id ，請確認素材id 或是素材跨帳戶權限 ({error_message})"
+            
             error_details = response_data.get('errors', {})
             detailed_error = f"HTTP {resp.status_code}: {error_message}"
             if error_details:
@@ -458,6 +466,10 @@ class BroadcielClient:
         # 檢查 API 回應中的 code 欄位
         if response_data.get("code") != 200:
             error_message = response_data.get('message', 'Unknown error')
+            
+            if "Material Not Found" in error_message:
+                error_message = f"系統無法對應到這個素材id ，請確認素材id 或是素材跨帳戶權限 ({error_message})"
+            
             error_details = response_data.get('errors', {})
             detailed_error = f"API Error (code: {response_data.get('code')}): {error_message}"
             if error_details:
