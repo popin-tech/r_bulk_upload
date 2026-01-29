@@ -8,6 +8,150 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 
+# Localization Mappings
+# Note: These are placeholder mappings based on standard practices.
+DEVICE_MAP = {
+    1: "PC",
+    2: "Mobile",
+    5: "Tablet"
+}
+TRAFFIC_MAP = {
+    1: "App",
+    2: "Web"
+}
+GENDER_MAP = {
+    1: "男",
+    2: "女",
+    0: "未知"
+}
+AGE_MAP = {
+    1: "18-24", 
+    2: "25-34", 
+    3: "35-44", 
+    4: "45-54", 
+    5: "55-64", 
+    6: "65+"
+}
+
+PLATFORM_MAP = {
+    1: "iOS",
+    2: "Android", 3: "Others", 5: "MacOS", 6: "Windows", 101: "iPadOS"
+}
+
+BROWSER_MAP = {
+    1: "Chrome", 2: "safari", 3: "Edge", 4: "FireFox", 5: "IE"
+}
+
+CATEGORY_MAP = {
+    "IAB1": "藝術與娛樂活動", "IAB1-1": "閱讀書籍", "IAB1-2": "娛樂星聞", "IAB1-3": "藝術收藏",
+    "IAB1-4": "喜劇", "IAB1-5": "影音串流", "IAB1-6": "音樂娛樂", "IAB1-7": "串流影集",
+    "IAB2": "汽車與交通", "IAB2-1": "汽車配件", "IAB2-2": "汽車維修保養", "IAB2-3": "汽車買賣",
+    "IAB2-4": "汽車愛好", "IAB2-5": "原廠認證中古車", "IAB2-6": "敞篷車", "IAB2-7": "轎跑車",
+    "IAB2-8": "跨界休旅車", "IAB2-9": "柴油車", "IAB2-10": "電動車", "IAB2-11": "掀背車",
+    "IAB2-12": "油電混合車", "IAB2-13": "豪華車", "IAB2-14": "小型廂型車", "IAB2-15": "機車",
+    "IAB2-16": "越野車", "IAB2-17": "高性能跑車", "IAB2-18": "小型貨卡", "IAB2-19": "道路救援",
+    "IAB2-20": "四門轎車", "IAB2-21": "商用車配件", "IAB2-22": "古董收藏車", "IAB2-23": "Wagon休旅車",
+    "IAB3": "商業與產業", "IAB3-1": "廣告", "IAB3-2": "農業", "IAB3-3": "生物醫學",
+    "IAB3-4": "商業軟體", "IAB3-5": "建築", "IAB3-6": "林業", "IAB3-7": "政府標案",
+    "IAB3-8": "綠色能源", "IAB3-9": "人力資源", "IAB3-10": "物流", "IAB3-11": "行銷",
+    "IAB3-12": "金屬產業", "IAB4": "求職職涯發展", "IAB4-1": "職涯規劃", "IAB4-2": "大學",
+    "IAB4-3": "助學貸款", "IAB4-4": "招聘會", "IAB4-5": "求職", "IAB4-6": "履歷撰寫",
+    "IAB4-7": "護理", "IAB4-8": "獎學金", "IAB4-9": "遠距工作", "IAB4-10": "軍事職涯",
+    "IAB4-11": "職業諮詢", "IAB5": "教育學習", "IAB5-1": "國高中教育", "IAB5-2": "成人教育",
+    "IAB5-3": "藝術史", "IAB5-4": "大學行政", "IAB5-5": "大學生活", "IAB5-6": "遠距學習",
+    "IAB5-7": "線上英文學習", "IAB5-8": "語言學習", "IAB5-9": "研究所教育", "IAB5-10": "在家教育",
+    "IAB5-11": "學習方法指導", "IAB5-12": "國小教師", "IAB5-13": "私立學校", "IAB5-14": "特殊教育",
+    "IAB5-15": "學習障礙", "IAB6": "家庭與育兒", "IAB6-1": "收養", "IAB6-2": "嬰幼兒",
+    "IAB6-3": "幼兒園", "IAB6-4": "親子教養", "IAB6-5": "學齡兒童教養", "IAB6-6": "青少年教養",
+    "IAB6-7": "孕期照護", "IAB6-8": "特殊需求兒童", "IAB6-9": "銀髮照護", "IAB7": "健康與健身",
+    "IAB7-1": "健身運動", "IAB7-2": "注意力缺失症", "IAB7-3": "愛滋病/HIV", "IAB7-4": "過敏疾病",
+    "IAB7-5": "自然療法", "IAB7-6": "關節活動照護", "IAB7-7": "呼吸道健康", "IAB7-8": "特殊兒照護",
+    "IAB7-9": "心理健康", "IAB7-10": "腦部照護", "IAB7-11": "腫瘤照護", "IAB7-12": "血脂管理",
+    "IAB7-13": "慢性疲勞症候群", "IAB7-14": "長期疼痛照護", "IAB7-15": "呼吸道防護", "IAB7-16": "聽力障礙",
+    "IAB7-17": "牙齒護理", "IAB7-18": "情緒健康", "IAB7-19": "皮膚照護", "IAB7-20": "血糖管理",
+    "IAB7-21": "神經系統", "IAB7-22": "胃食道逆流症/胃酸逆流", "IAB7-23": "頭部舒緩", "IAB7-24": "心血管照護",
+    "IAB7-25": "保健草藥", "IAB7-26": "身心靈療癒", "IAB7-27": "腸胃保健", "IAB7-28": "家庭暴力防治",
+    "IAB7-29": "私密照護", "IAB7-30": "不孕症", "IAB7-31": "男性健康", "IAB7-32": "健康飲食管理",
+    "IAB7-33": "骨骼健康", "IAB7-34": "情緒舒壓", "IAB7-35": "兒童醫學", "IAB7-36": "物理治療",
+    "IAB7-37": "精神醫學", "IAB7-38": "銀髮健康", "IAB7-39": "親密關係", "IAB7-40": "睡眠障礙",
+    "IAB7-41": "無菸生活", "IAB7-42": "物質濫用", "IAB7-43": "內分泌代謝", "IAB7-44": "體重管理",
+    "IAB7-45": "女性健康照護", "IAB8": "美食與飲品", "IAB8-1": "美國料理", "IAB8-2": "燒烤料理",
+    "IAB8-3": "辛香料風味料理", "IAB8-4": "中式料理", "IAB8-5": "微醺飲品", "IAB8-6": "咖啡生活",
+    "IAB8-7": "異國美食探索", "IAB8-8": "手作甜點", "IAB8-9": "美食推薦", "IAB8-10": "食物過敏族群",
+    "IAB8-11": "法式料理", "IAB8-12": "輕盈飲食", "IAB8-13": "義式料理", "IAB8-14": "日式料理",
+    "IAB8-15": "墨西哥料理", "IAB8-16": "植物性飲食", "IAB8-17": "蔬食者", "IAB8-18": "葡萄酒",
+    "IAB9": "休閒興趣嗜好", "IAB9-1": "創意科技", "IAB9-2": "手作藝術", "IAB9-3": "DIY手作串珠",
+    "IAB9-4": "觀鳥", "IAB9-5": "桌遊/益智遊戲", "IAB9-6": "香氛蠟燭", "IAB9-7": "紙牌遊戲",
+    "IAB9-8": "國際象棋", "IAB9-9": "雪茄", "IAB9-10": "古董收藏", "IAB9-11": "漫畫",
+    "IAB9-12": "繪畫素描", "IAB9-13": "自由職業資源", "IAB9-14": "家族歷史", "IAB9-15": "出版書籍",
+    "IAB9-16": "吉他", "IAB9-17": "居家音樂製作", "IAB9-18": "創新發明", "IAB9-19": "珠寶設計",
+    "IAB9-20": "魔術表演", "IAB9-21": "刺繡手作", "IAB9-22": "繪畫", "IAB9-23": "攝影",
+    "IAB9-24": "廣播電台", "IAB9-25": "RPG角色扮演桌遊", "IAB9-26": "科幻迷", "IAB9-27": "手帳拼貼",
+    "IAB9-28": "影視編劇", "IAB9-29": "郵票收藏", "IAB9-30": "視訊和電腦遊戲", "IAB9-31": "木藝創作",
+    "IAB10": "家居與園藝", "IAB10-1": "居家娛樂", "IAB10-2": "娛樂設備", "IAB10-3": "環境安全",
+    "IAB10-4": "園藝", "IAB10-5": "居家維修", "IAB10-6": "家庭劇院", "IAB10-7": "室內設計&佈置",
+    "IAB10-8": "景觀美化", "IAB10-9": "房屋改造", "IAB11": "法律政治議題", "IAB11-1": "移民諮詢",
+    "IAB11-2": "法律議題", "IAB11-3": "政府服務", "IAB11-4": "政治", "IAB11-5": "新聞評論",
+    "IAB12": "新聞與時事", "IAB12-1": "國際新聞", "IAB12-2": "國內新聞", "IAB12-3": "地方新聞",
+    "IAB13": "個人財務", "IAB13-1": "新手理財", "IAB13-2": "信用卡&信貸", "IAB13-3": "財務新聞",
+    "IAB13-4": "財富管理", "IAB13-5": "基金投資", "IAB13-6": "保險", "IAB13-7": "投資",
+    "IAB13-8": "共同基金", "IAB13-9": "期權交易", "IAB13-10": "退休理財", "IAB13-11": "股票投資",
+    "IAB13-12": "節稅規劃", "IAB14": "社會公共議題", "IAB14-1": "交友約會", "IAB14-2": "婚姻諮詢",
+    "IAB14-3": "多元生活", "IAB14-4": "結婚生活", "IAB14-5": "樂齡生活", "IAB14-6": "年輕族群",
+    "IAB14-7": "婚禮", "IAB14-8": "多元文化", "IAB15": "科學新知", "IAB15-1": "星座運勢",
+    "IAB15-2": "生命科學", "IAB15-3": "化學", "IAB15-4": "地質學", "IAB15-5": "靈異探索",
+    "IAB15-6": "物理學", "IAB15-7": "宇宙科學", "IAB15-8": "世界地理", "IAB15-9": "園藝植物",
+    "IAB15-10": "天氣資訊", "IAB16": "寵物照護", "IAB16-1": "水族館", "IAB16-2": "寵物鳥",
+    "IAB16-3": "萌寵毛孩-貓", "IAB16-4": "萌寵毛孩-狗", "IAB16-5": "特殊寵物", "IAB16-6": "爬蟲類",
+    "IAB16-7": "寵物保健", "IAB17": "運動賽事", "IAB17-1": "賽車運動", "IAB17-2": "棒球",
+    "IAB17-3": "單車運動", "IAB17-4": "體態雕塑", "IAB17-5": "拳擊", "IAB17-6": "水上運動",
+    "IAB17-7": "競技啦啦隊", "IAB17-8": "攀岩", "IAB17-9": "板球", "IAB17-10": "藝術滑冰",
+    "IAB17-11": "飛蠅釣", "IAB17-12": "美式足球", "IAB17-13": "淡水釣魚", "IAB17-14": "戶外釣魚",
+    "IAB17-15": "高爾夫", "IAB17-16": "馬術競賽", "IAB17-17": "冰上曲棍球", "IAB17-18": "狩獵/射擊",
+    "IAB17-19": "溜冰運動", "IAB17-20": "武術", "IAB17-21": "越野單車", "IAB17-22": "美式賽車",
+    "IAB17-23": "國際運動盛事", "IAB17-24": "漆彈遊戲", "IAB17-25": "越野運動", "IAB17-26": "職業籃球",
+    "IAB17-27": "冰上競技", "IAB17-28": "牛仔競技", "IAB17-29": "橄欖球", "IAB17-30": "慢跑日常",
+    "IAB17-31": "海上休閒", "IAB17-32": "海釣", "IAB17-33": "水肺潛水", "IAB17-34": "極限滑板",
+    "IAB17-35": "滑雪", "IAB17-36": "單板滑雪", "IAB17-37": "衝浪運動", "IAB17-38": "游泳運動",
+    "IAB17-39": "乒乓球", "IAB17-40": "網球", "IAB17-41": "排球", "IAB17-42": "路跑",
+    "IAB17-43": "水上活動", "IAB17-44": "國際足球", "IAB18": "風格與時尚", "IAB18-1": "美妝保養",
+    "IAB18-2": "刺青彩繪", "IAB18-3": "風格時尚", "IAB18-4": "珠寶首飾", "IAB18-5": "流行服飾",
+    "IAB18-6": "配件飾品", "IAB19": "科技趨勢", "IAB19-1": "3D繪圖", "IAB19-2": "動畫",
+    "IAB19-3": "防毒軟體", "IAB19-4": "程式語言學習", "IAB19-5": "攝影器材", "IAB19-6": "智慧型手機",
+    "IAB19-7": "資訊技能認證", "IAB19-8": "網路技術", "IAB19-9": "電腦配件", "IAB19-10": "科技評測",
+    "IAB19-11": "資料中心", "IAB19-12": "數據管理", "IAB19-13": "數位出版", "IAB19-14": "影片編輯",
+    "IAB19-15": "電郵服務", "IAB19-16": "繪圖軟體", "IAB19-17": "家庭影音娛樂", "IAB19-18": "線上協作工具",
+    "IAB19-19": "Java", "IAB19-20": "JavaScript", "IAB19-21": "MacOS系統", "IAB19-22": "MP3/MIDI",
+    "IAB19-23": "網路會議", "IAB19-24": "網路入門教學", "IAB19-25": "資安防護", "IAB19-26": "行動裝置",
+    "IAB19-27": "PC硬體", "IAB19-28": "PHP", "IAB19-29": "行動娛樂", "IAB19-30": "共享軟體/免費軟體",
+    "IAB19-31": "Unix", "IAB19-32": "VB程式設計", "IAB19-33": "數位素材", "IAB19-34": "網站設計",
+    "IAB19-35": "網路搜尋", "IAB19-36": "Windows作業系統", "IAB20": "旅遊探索", "IAB20-1": "戶外探險",
+    "IAB20-2": "非洲", "IAB20-3": "航空服務", "IAB20-4": "澳紐旅遊", "IAB20-5": "民宿",
+    "IAB20-6": "平價旅行", "IAB20-7": "商務差旅", "IAB20-8": "美國旅遊", "IAB20-9": "露營",
+    "IAB20-10": "加拿大", "IAB20-11": "加勒比海", "IAB20-12": "郵輪旅遊", "IAB20-13": "東歐",
+    "IAB20-14": "歐洲", "IAB20-15": "法國", "IAB20-16": "希臘", "IAB20-17": "蜜月旅行",
+    "IAB20-18": "飯店", "IAB20-19": "義大利", "IAB20-20": "日本", "IAB20-21": "拉丁美洲",
+    "IAB20-22": "國家公園", "IAB20-23": "南美", "IAB20-24": "SPA水療", "IAB20-25": "主題公園",
+    "IAB20-26": "家庭旅行", "IAB20-27": "英國", "IAB21": "房地產", "IAB21-1": "公寓",
+    "IAB21-2": "建築師", "IAB21-3": "房屋買賣", "IAB22": "購物", "IAB22-1": "抽獎贈品",
+    "IAB22-2": "折扣優惠", "IAB22-3": "優惠活動", "IAB22-4": "搜尋比價", "IAB23": "宗教與心靈成長",
+    "IAB23-1": "多元信仰", "IAB23-2": "哲學思考", "IAB23-3": "佛教", "IAB23-4": "天主教",
+    "IAB23-5": "基督教", "IAB23-6": "印度教", "IAB23-7": "伊斯蘭教", "IAB23-8": "猶太教",
+    "IAB23-9": "摩門教", "IAB23-10": "自然信仰", "IAB24": "其他未分類內容", "IAB25": "論壇與留言",
+    "IAB25-1": "未分類內容", "IAB25-2": "暴力內容防護", "IAB25-3": "成人內容過濾", "IAB25-4": "不當言論管理",
+    "IAB25-5": "仇恨言論防制", "IAB25-6": "無定義內容", "IAB25-7": "獎勵機制內容", "IAB26": "限制敏感內容",
+    "IAB26-1": "非法內容防護", "IAB26-2": "盜版軟體防制", "IAB26-3": "惡意軟體", "IAB26-4": "智財權保護",
+    "others": "其他"
+}
+
+# Helper to reverse map
+def _get_key_by_value(d: Dict[Any, str], val: str) -> Optional[Any]:
+    val_clean = val.strip().lower() # Case insensitive comparison base
+    for k, v in d.items():
+        if v.lower() == val_clean:
+            return k
+    return None
+
 class UploadParsingError(RuntimeError):
     pass
 
@@ -128,6 +272,40 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
                 # ignore non-int tokens
                 continue
         return items
+
+    def _parse_mapped_list(val: Any, mapping: Dict[Any, str]) -> List[Any]:
+        """
+        Parse a list of strings and map them to IDs/Codes using the provided mapping.
+        Supports both Integer IDs (e.g. Platform) and String Codes (e.g. Category).
+        """
+        items = []
+        
+        # Detect Key Type from mapping (int or str)
+        is_int_key = True
+        if mapping:
+            first_k = next(iter(mapping))
+            if isinstance(first_k, str):
+                is_int_key = False
+                
+        for token in _split_list(val):
+            # 1. Reverse lookup: Chinese -> ID/Code
+            mapped_id = _get_key_by_value(mapping, token)
+            if mapped_id is not None:
+                items.append(mapped_id)
+            else:
+                # 2. Fallback: Parse directly
+                if is_int_key:
+                    try:
+                        items.append(int(token))
+                    except Exception:
+                        continue
+                else:
+                    # String code (e.g. IAB1), accept as is logic
+                    # Ideally we check if token is in keys?
+                    # For now just append raw string
+                    items.append(token)
+        return items
+
 
     # Identify columns
     # App OS: "操作系統"
@@ -251,6 +429,23 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
                       campaign["cpg_status"] = 1
                  elif v in ("2", "2.0"):
                       campaign["cpg_status"] = 2
+            else:
+                 # Default to 1 (Active) ONLY if not specified
+                 # Wait, logic in CampaignBulkProcessor defaults to 1 if missing.
+                 # But we need to ensure "關閉" becomes 2 here.
+                 # If empty, we leave it out and let processor decide? 
+                 # Or set default here?
+                 # Requirement: "新增時預設開啟，但填關閉必須是關閉"
+                 # So default 1 here is fine, but if "關閉" is present it MUST be 2.
+                 
+                 # CampaignBulkProcessor logic:
+                 # if "cpg_status" in campaign_data: set it
+                 # else: set 1
+                 
+                 # So if we don't set it here, it defaults to 1.
+                 # If we set 2 here, it stays 2.
+                 # This logic is correct for the requirement.
+                 pass
             
             campaigns[campaign_name] = campaign
         else:
@@ -483,6 +678,11 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
         if device_types:
             device_types_int = []
             for d in device_types:
+                # Try map lookup first
+                mapped_id = _get_key_by_value(DEVICE_MAP, d)
+                if mapped_id is not None:
+                    device_types_int.append(mapped_id)
+                    continue
                 try:
                     device_types_int.append(int(d))
                 except Exception:
@@ -494,6 +694,10 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
         if traffic_types:
             traffic_types_int = []
             for t in traffic_types:
+                mapped_id = _get_key_by_value(TRAFFIC_MAP, t)
+                if mapped_id is not None:
+                    traffic_types_int.append(mapped_id)
+                    continue
                 try:
                     traffic_types_int.append(int(t))
                 except Exception:
@@ -505,23 +709,7 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
             _get_optional_str(row, target_os_col) if target_os_col else None
         )
         if target_os_raw:
-            platforms = _split_list(target_os_raw)
-            platforms_int = []
-            for p in platforms:
-                # Handle string inputs (iOS/Android/Others) or Ints
-                p_lower = p.lower()
-                if "ios" in p_lower:
-                    platforms_int.append(1)
-                elif "android" in p_lower:
-                    platforms_int.append(2)
-                elif "others" in p_lower:
-                    platforms_int.append(3) # Assuming 3 for Others, or skip?
-                else:
-                    try:
-                        platforms_int.append(int(p))
-                    except Exception:
-                        continue
-            audience["platform"] = platforms_int
+            audience["platform"] = _parse_mapped_list(target_os_raw, PLATFORM_MAP)
 
         # 最高系統版本 → os_version as {min, max}
         max_os_ver_raw = row.get("最高系統版本")
@@ -529,33 +717,33 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
         max_version = 0
         audience["os_version"] = {"min": min_version, "max": max_version}
 
-        # 瀏覽器 → browser, force int
-        browsers = _split_list(row.get("瀏覽器"))
-        if browsers:
-            browsers_int = []
-            for b in browsers:
-                try:
-                    browsers_int.append(int(b))
-                except Exception:
-                    continue
-            audience["browser"] = browsers_int
+        # 瀏覽器 → browser
+        audience["browser"] = _parse_mapped_list(row.get("瀏覽器"), BROWSER_MAP)
 
-        # 年齡 → age, force int
+        # 年齡 → age
         ages = _split_list(row.get("年齡"))
         if ages:
             ages_int = []
             for a in ages:
+                mapped_id = _get_key_by_value(AGE_MAP, a)
+                if mapped_id is not None:
+                    ages_int.append(mapped_id)
+                    continue
                 try:
                     ages_int.append(int(a))
                 except Exception:
                     continue
             audience["age"] = ages_int
 
-        # 性別 → gender, force int
+        # 性別 → gender
         genders = _split_list(row.get("性別"))
         if genders:
             genders_int = []
             for g in genders:
+                mapped_id = _get_key_by_value(GENDER_MAP, g)
+                if mapped_id is not None:
+                    genders_int.append(mapped_id)
+                    continue
                 try:
                     genders_int.append(int(g))
                 except Exception:
@@ -582,12 +770,42 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
                         f"Row {excel_row_num}: 投放興趣選項必須為「包含」或「不包含」。"
                     )
             
-            # Use 投放興趣受眾 (IAB) as the value list
+            # Use 投放興趣受眾 (IAB) as the value list (Map Names -> Codes)
             if interest_audience:
-                category["value"] = interest_audience
+                # Note: original list is already split by _split_list in interest_audience
+                # But _parse_mapped_list expects raw value usually? 
+                # Actually _parse_mapped_list calls _split_list again internally.
+                # So we can pass row.get("投放興趣受眾") directly.
+                category["value"] = _parse_mapped_list(row.get("投放興趣受眾"), CATEGORY_MAP)
             
             if category:
                 audience["category"] = category
+
+            if category:
+                audience["category"] = category
+
+        # APP/網站篩選 (Site)
+        # 欄位: "APP/網站篩選選項" (type: 1=包含, 2=不包含), "APP/網站篩選" (url)
+        site_opt_raw = row.get("APP/網站篩選選項")
+        site_url_raw = row.get("APP/網站篩選")
+        
+        if site_url_raw and not pd.isna(site_url_raw):
+            site_obj = {}
+            # Parse Type
+            s_type = 1 # default
+            if site_opt_raw:
+                s_opt_str = str(site_opt_raw).strip()
+                if s_opt_str == "包含" or s_opt_str == "1":
+                    s_type = 1
+                elif s_opt_str == "不包含" or s_opt_str == "2":
+                    s_type = 2
+            
+            site_obj["type"] = s_type
+            site_obj["url"] = str(site_url_raw).strip()
+            audience["site"] = site_obj
+            
+        # Request: Force site to [] to avoid API error (ID required) while keeping Excel columns
+        audience["site"] = []
 
         # AI語意擴充選項 / AI語意擴充關鍵字 → keywords: { type, value }
         # AI語意擴充選項 should be "1" or "2"
@@ -609,9 +827,9 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
                     f"Row {excel_row_num}: AI語意擴充選項必須為 1 或 2。"
                 )
             elif opt_str:
-                if opt_str in ("1", "1.0"):
+                if opt_str in ("1", "1.0") or opt_str == "包含":
                     kw_type = 1
-                elif opt_str in ("2", "2.0"):
+                elif opt_str in ("2", "2.0") or opt_str == "不包含":
                     kw_type = 2
                 else:
                     raise UploadParsingError(
@@ -691,10 +909,14 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
                 cr_status_val = 1
             elif v_cr == "關閉":
                 cr_status_val = 2
+            elif v_cr == "已過期":
+                cr_status_val = 4
             elif v_cr in ("1", "1.0"):
                 cr_status_val = 1
             elif v_cr in ("2", "2.0"):
                 cr_status_val = 2
+            elif v_cr in ("4", "4.0"):
+                cr_status_val = 4
 
         cr_mt_raw = row.get("廣告素材ID")
         cr_mt_id: Optional[int | str] = None
@@ -768,7 +990,8 @@ def parse_excel(file_bytes: bytes) -> Dict[str, object]:
 def generate_excel_from_api_data(
     campaigns: List[Dict[str, Any]],
     ad_groups: List[Dict[str, Any]],
-    ad_creatives: List[Dict[str, Any]]
+    ad_creatives: List[Dict[str, Any]],
+    audience_id_map: Optional[Dict[int, str]] = None
 ) -> bytes:
     """
     Generate an Excel file (bytes) from the API data structures, 
@@ -819,7 +1042,7 @@ def generate_excel_from_api_data(
 
     for cr in ad_creatives:
         # Check both ad_status and cr_status, sometimes one is used
-        status = cr.get("ad_status") or cr.get("cr_status")
+        status = cr.get("cr_status") or cr.get("ad_status")
         if status == 3:
             continue
         
@@ -865,6 +1088,7 @@ def generate_excel_from_api_data(
     def _map_status(val):
         if val == 1: return "開啟"
         if val == 2: return "關閉"
+        if val == 4: return "已過期"
         return "" 
 
     def _map_market_goal(val):
@@ -889,8 +1113,29 @@ def generate_excel_from_api_data(
         if val == 2: return "不包含"
         return ""
         
-    def _map_list(lst):
+    def _map_list(lst, mapping: Optional[Dict[Any, str]] = None):
         if not lst: return ""
+        if mapping:
+            # Check key type
+            is_int_key = True
+            first_k = next(iter(mapping)) if mapping else None
+            if isinstance(first_k, str):
+                is_int_key = False
+            
+            mapped = []
+            for x in lst:
+                if is_int_key:
+                    try:
+                        k = int(x)
+                        mapped.append(mapping.get(k, str(x)))
+                    except:
+                        mapped.append(str(x))
+                else:
+                    # String key
+                    k = str(x)
+                    mapped.append(mapping.get(k, k))
+            return ",".join(mapped)
+        
         return ",".join(str(x) for x in lst)
         
     def _map_hours(utc_hours):
@@ -898,6 +1143,14 @@ def generate_excel_from_api_data(
         # User requested NO timezone adjustment (keep UTC)
         local_hours = [str(h) for h in utc_hours]
         return ",".join(local_hours)
+        
+    def _map_ai_opt(val):
+        if not val: return ""
+        if val == 1: return "包含"
+        if val == 2: return "不包含"
+        if val == "1": return "包含"
+        if val == "2": return "不包含"
+        return str(val)
 
     def _map_list_obj_value(lst):
         urls = []
@@ -969,18 +1222,26 @@ def generate_excel_from_api_data(
             g_loc_type = _map_country_type(loc.get("country_type"))
             g_country = _map_list(loc.get("country"))
             aud = g.get("audience_target", {})
-            a_device = _map_list(aud.get("device_type"))
-            a_traffic = _map_list(aud.get("traffic_type"))
-            a_platform = _map_list(aud.get("platform"))
+            a_device = _map_list(aud.get("device_type"), DEVICE_MAP)
+            a_traffic = _map_list(aud.get("traffic_type"), TRAFFIC_MAP)
+            a_platform = _map_list(aud.get("platform"), PLATFORM_MAP)
             a_os_ver = "" 
-            a_browser = _map_list(aud.get("browser"))
-            a_age = _map_list(aud.get("age"))
-            a_gender = _map_list(aud.get("gender"))
+            a_browser = _map_list(aud.get("browser"), BROWSER_MAP)
+            a_age = _map_list(aud.get("age"), AGE_MAP)
+            a_gender = _map_list(aud.get("gender"), GENDER_MAP)
             cat = aud.get("category", {})
             a_cat_type = _map_country_type(cat.get("type"))
-            a_cat_val = _map_list(cat.get("value"))
+            a_cat_val = _map_list(cat.get("value"), CATEGORY_MAP)
             if not a_cat_val:
                 a_cat_type = ""
+                
+            # Site Filter (APP/網站篩選)
+            site_obj = aud.get("site", {})
+            a_site_type = _map_country_type(site_obj.get("type")) # reusing map for 1=包含, 2=不包含
+            a_site_url = site_obj.get("url", "")
+            if not a_site_url:
+                a_site_type = ""
+                
             pix_include = []
             pix_exclude = []
             for p in aud.get("pixel_audience", []):
@@ -988,18 +1249,22 @@ def generate_excel_from_api_data(
                 ptype = p.get("type")
                 if ptype == 1: pix_include.append(pid)
                 elif ptype == 2: pix_exclude.append(pid)
-            a_pix_inc = _map_list(pix_include)
-            a_pix_exc = _map_list(pix_exclude)
+            a_pix_inc = _map_list(pix_include, audience_id_map)
+            a_pix_exc = _map_list(pix_exclude, audience_id_map)
             kw = aud.get("keywords", {})
-            a_ai_type = kw.get("type", "")
+            a_ai_type = _map_ai_opt(kw.get("type", ""))
             a_ai_val = _map_list(kw.get("value"))
+            
+            # Request: If keywords (value) is empty, Option (type) should be empty
+            if not a_ai_val:
+                a_ai_type = ""
             
             g_cols_data = [
                 g_name, g_id, g_status,
                 g_target, g_click, g_imp,
                 g_market, g_rev, g_price, g_day_budget, g_depth, g_cv_val, g_cv_event, g_start, g_end,
                 g_week, g_hours, g_loc_type, g_country, a_device, a_traffic, a_platform, a_os_ver, a_browser,
-                a_age, a_gender, a_cat_type, a_cat_val, a_pix_inc, a_pix_exc,
+                a_age, a_gender, a_cat_type, a_cat_val, a_site_type, a_site_url, a_pix_inc, a_pix_exc,
                 a_ai_type, a_ai_val
             ]
             
@@ -1014,7 +1279,7 @@ def generate_excel_from_api_data(
             for cr in creatives:
                 cr_name = cr.get("cr_name", "")
                 cr_id = cr.get("cr_id", "")
-                cr_status = _map_status(cr.get("ad_status") or cr.get("cr_status"))
+                cr_status = _map_status(cr.get("cr_status") or cr.get("ad_status"))
                 cr_iab = cr.get("iab", "")
                 cr_title = cr.get("cr_title", "")
                 cr_desc = cr.get("cr_desc", "")
@@ -1042,7 +1307,7 @@ def generate_excel_from_api_data(
         "第三方曝光追蹤連結(Grouped)",
         "行銷目標", "計費模式", "固定出價", "每日預算", "深度轉換目標", "轉換價值", "轉化目標", "開始日期", "結束日期",
         "投放星期數", "投放時間段", "地理位置", "國家", "設備類型", "流量類型", "受眾操作系統", "最高系統版本", "瀏覽器",
-        "年齡", "性別", "投放興趣選項", "投放興趣受眾", "自定義受眾（包含）", "自定義受眾（不包含）",
+        "年齡", "性別", "投放興趣選項", "投放興趣受眾", "APP/網站篩選選項", "APP/網站篩選", "自定義受眾（包含）", "自定義受眾（不包含）",
         "AI語意擴充選項", "AI語意擴充關鍵字", 
         "廣告文案名稱", "廣告文案ID", "廣告文案狀態",
         "廣告類型", "廣告標題", "廣告內文", "Call to Action", "廣告素材ID"
@@ -1215,6 +1480,13 @@ def generate_excel_from_api_data(
         # 1. Status Columns (C, L, AS)
         _add_dv("C", ["開啟", "關閉"], "廣告活動狀態")
         _add_dv("L", ["開啟", "關閉"], "廣告群組狀態")
+
+        # 2. Platform (AE) & Browser (AG)
+        # Note: Columns indices:
+        # "受眾操作系統" -> Index 30 -> 31st col -> AE
+        # "瀏覽器" -> Index 32 -> 33rd col -> AG
+        _add_dv("AE", list(PLATFORM_MAP.values()), "受眾操作系統")
+        _add_dv("AG", list(BROWSER_MAP.values()), "瀏覽器")
         
         # Creative Status: 
         # Index 44 -> AR (0-based 44 -> 45th col -> 45-26=19 -> S)
@@ -1251,7 +1523,7 @@ def generate_excel_from_api_data(
         # My apologies, I need to be super precise.
         
         # Col Index 43 (0-based) -> Excel Col 44 -> AR.
-        _add_dv("AR", ["開啟", "關閉"], "廣告文案狀態")
+        _add_dv("AR", ["開啟", "關閉", "已過期"], "廣告文案狀態")
 
         # 2. 產品類型 (Col 5 -> F)
         _add_dv("F", ["web", "app"], "產品類型")
@@ -1281,6 +1553,6 @@ def generate_excel_from_api_data(
         _add_dv("AJ", ["包含", "不包含"], "投放興趣選項")
         
         # 10. AI語意擴充選項 (Col 39 -> AN) (Index 39 -> 40th col -> AN)
-        _add_dv("AN", ["1", "2"], "AI語意擴充選項")
+        _add_dv("AN", ["包含", "不包含"], "AI語意擴充選項")
         
     return output.getvalue()

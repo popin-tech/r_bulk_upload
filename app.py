@@ -261,10 +261,24 @@ def download_excel():
         groups = client.fetch_all_ad_groups()
         creatives = client.fetch_all_ad_creatives()
         
+        # Fetch AI Audiences for ID->Name mapping (Download)
+        audience_id_map = {}
+        try:
+            audiences = client.fetch_ai_audiences()
+            # Construct map: id -> name
+            for item in audiences:
+                a_name = item.get("audience_name")
+                a_id = item.get("audience_id")
+                if a_name and a_id:
+                    audience_id_map[int(a_id)] = str(a_name).strip()
+            app.logger.info(f"Loaded {len(audience_id_map)} AI audiences for download mapping.")
+        except Exception as e:
+            app.logger.warning(f"Failed to fetch AI audiences: {e}. ID mapping will be disabled.")
+
         app.logger.info(f"Fetched {len(campaigns)} campaigns, {len(groups)} groups, {len(creatives)} creatives.")
         
         # Generate Excel
-        excel_bytes = generate_excel_from_api_data(campaigns, groups, creatives)
+        excel_bytes = generate_excel_from_api_data(campaigns, groups, creatives, audience_id_map=audience_id_map)
         
         # Base64 Encode
         b64_data = base64.b64encode(excel_bytes).decode('utf-8')

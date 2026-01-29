@@ -54,7 +54,96 @@ class CampaignBulkProcessor:
         # 直接接收已配置好的 BroadcielClient
         self.client = client
         self.max_retries = 2
-    
+        
+    def _translate_error_msg(self, error_str: str) -> str:
+        """
+        將 API JSON 錯誤訊息轉譯為繁體中文
+        Example input: '... Errors: {"audience_target": {"site": {"id": {"_errors": ["Required"]}}}}'
+        """
+        import json
+        import re
+        
+        # 1. 嘗試提取 JSON 部分
+        json_part = None
+        prefix = ""
+        
+        # 常見模式: "Update failed: ... Errors: {...}"
+        if "Errors: {" in error_str:
+            parts = error_str.split("Errors: ", 1)
+            prefix = parts[0] + "錯誤詳情："
+            json_str = parts[1]
+            try:
+                # 嘗試解析 JSON (需處理可能截斷或格式問題，這裡假設是完整 JSON)
+                json_part = json.loads(json_str)
+            except:
+                pass
+        
+        if not json_part:
+            # 嘗試直接解析整個字串
+            try:
+                json_part = json.loads(error_str)
+            except:
+                return error_str # 無法解析，回傳原始字串
+
+        # 2. 定義欄位中文化對照表
+        FIELD_MAP = {
+            "audience_target": "目標受眾",
+            "site": "網站/APP篩選",
+            "id": "ID",
+            "type": "類型",
+            "url": "網址",
+            "device_type": "設備類型",
+            "traffic_type": "流量類型",
+            "platform": "操作系統",
+            "os_version": "系統版本",
+            "browser": "瀏覽器",
+            "age": "年齡",
+            "gender": "性別",
+            "category": "投放興趣",
+            "keywords": "AI語意擴充",
+            "pixel_audience": "自定義受眾",
+            "geo_location": "地理位置",
+            "budget": "預算",
+            "schedule": "排程",
+            "cpg_name": "廣告活動名稱",
+            "group_name": "廣告群組名稱", 
+            "cr_name": "素材名稱",
+            "Required": "是必填的",
+            "The field is required": "此欄位必填",
+            "Invalid value": "數值無效"
+        }
+
+        # 3. 遞迴查找錯誤
+        errors_found = []
+        
+        def _traverse(node, path=[]):
+            if isinstance(node, dict):
+                # Check for _errors
+                if "_errors" in node and isinstance(node["_errors"], list) and node["_errors"]:
+                    # Found error leaf
+                    msgs = node["_errors"]
+                    # Translate path
+                    path_str = ""
+                    for p in path:
+                        path_str += f"{FIELD_MAP.get(p, p)} > "
+                    
+                    # Translate messages
+                    trans_msgs = [FIELD_MAP.get(m, m) for m in msgs]
+                    errors_found.append(f"{path_str.rstrip(' > ')}: {', '.join(trans_msgs)}")
+                
+                # Continue traverse
+                for k, v in node.items():
+                    if k != "_errors":
+                        _traverse(v, path + [k])
+        
+        _traverse(json_part)
+        
+        if errors_found:
+            translated = prefix + "；".join(errors_found)
+            return f"{translated} | Original: {error_str}"
+            
+        return error_str
+
     def process_bulk_campaigns(
         self,
         payload: Dict[str, Any]
@@ -149,7 +238,9 @@ class CampaignBulkProcessor:
                 break
                 
             except Exception as e:
-                error_msg = f"Attempt {attempt + 1} failed at {failed_step}: {str(e)}"
+                raw_err = str(e)
+                trans_err = self._translate_error_msg(raw_err)
+                error_msg = f"Attempt {attempt + 1} failed at {failed_step}: {trans_err}"
                 logger.warning(f"Campaign {campaign_index} - {error_msg}")
                 
                 if attempt < self.max_retries:
@@ -158,7 +249,9 @@ class CampaignBulkProcessor:
                     result.ad_group_results = []
                     continue
                 else:
-                    result.error_message = f"Failed after {self.max_retries + 1} attempts. Last error at {failed_step}: {str(e)}"
+                    raw_err = str(e)
+                    trans_err = self._translate_error_msg(raw_err)
+                    result.error_message = f"Failed after {self.max_retries + 1} attempts. Last error at {failed_step}: {trans_err}"
                     logger.error(f"Campaign {campaign_index} - {result.error_message}")
         
         return result
@@ -222,8 +315,11 @@ class CampaignBulkProcessor:
                 logger.info(f"Ad Group {ad_group_index} created with {ad_asset_success_count}/{len(ad_assets)} creatives")
             
         except Exception as e:
-            result.error_message = str(e)
-        
+            raw_err = str(e)
+            trans_err = self._translate_error_msg(raw_err)
+            result.error_message = f"Ad Group Action failed: {trans_err}"
+            logger.error(f"Ad Group {ad_group_index} - {result.error_message}")
+    
         return result
     
     def _process_single_ad_asset(
@@ -264,7 +360,10 @@ class CampaignBulkProcessor:
             result.success = True
             
         except Exception as e:
-            result.error_message = str(e)
+            raw_err = str(e)
+            trans_err = self._translate_error_msg(raw_err)
+            result.error_message = f"Ad Asset Action failed: {trans_err}"
+            logger.error(f"Ad Asset {ad_asset_index} - {result.error_message}")
         
         return result
     
@@ -473,62 +572,123 @@ class CampaignBulkProcessor:
         return errors
     
     def _generate_summary(self, results: List[CampaignResult], campaigns_data: List[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """生成處理結果統計"""
-        total_campaigns = len(results)
-        successful_campaigns = sum(1 for r in results if r.success)
-        failed_campaigns = total_campaigns - successful_campaigns
+        """生成處理結果統計，確保同一ID只計算一次成功，並區分新增與修改"""
         
-        # 統計 Ad Groups 和 Ad Assets
-        total_ad_groups = 0
-        successful_ad_groups = 0
-        total_ad_assets = 0
-        successful_ad_assets = 0
+        # 提取成功的 ID 集合 (Set for de-duplication)
+        # Separate sets for Created and Modified to allow distinct counts
+        # Note: An ID could potentially be created and then modified in the same batch (unlikely but possible).
+        # We will count it as Created if it was created in this batch? 
+        # Actually, if I have row 1: Create A, row 2: Update A (using ID from 1? No, Excel doesn't support that dynamic ref).
+        # So typically:
+        # - Rows with ID -> Update
+        # - Rows without ID -> Create
+        # We can just count based on the input data intent.
+        
+        created_campaign_ids = set()
+        modified_campaign_ids = set()
+        
+        created_ad_group_ids = set()
+        modified_ad_group_ids = set()
+        
+        created_creative_ids = set()
+        modified_creative_ids = set()
+        
+        # 統計失敗次數 (Operation based)
+        failed_campaigns = 0
+        failed_ad_groups = 0
+        failed_ad_assets = 0
+        
+        # 統計總操作數 (Operation based)
+        total_campaigns_ops = len(results)
+        total_ad_groups_ops = 0
+        total_ad_assets_ops = 0
         
         for campaign_result in results:
+            # Check intended action from source data
+            cpg_input = campaigns_data[campaign_result.campaign_index] if campaigns_data else {}
+            is_cpg_update = bool(cpg_input.get("cpg_id"))
+            
+            if campaign_result.success and campaign_result.campaign_id:
+                if is_cpg_update:
+                    modified_campaign_ids.add(campaign_result.campaign_id)
+                else:
+                    created_campaign_ids.add(campaign_result.campaign_id)
+            else:
+                failed_campaigns += 1
+                
+            # Ad Groups
+            ad_groups_input = cpg_input.get("ad_group", [])
+            
             for ad_group_result in campaign_result.ad_group_results:
-                total_ad_groups += 1
-                if ad_group_result.success:
-                    successful_ad_groups += 1
+                total_ad_groups_ops += 1
+                
+                ag_input = ad_groups_input[ad_group_result.ad_group_index] if ad_group_result.ad_group_index < len(ad_groups_input) else {}
+                is_grp_update = bool(ag_input.get("group_id"))
+                
+                if ad_group_result.success and ad_group_result.ad_group_id:
+                    if is_grp_update:
+                        modified_ad_group_ids.add(ad_group_result.ad_group_id)
+                    else:
+                        created_ad_group_ids.add(ad_group_result.ad_group_id)
+                else:
+                    failed_ad_groups += 1
+                
+                # Ad Assets
+                ad_assets_input = ag_input.get("ad_asset", [])
                 
                 for ad_asset_result in ad_group_result.ad_asset_results:
-                    total_ad_assets += 1
-                    if ad_asset_result.success:
-                        successful_ad_assets += 1
+                    total_ad_assets_ops += 1
+                    
+                    aa_input = ad_assets_input[ad_asset_result.ad_asset_index] if ad_asset_result.ad_asset_index < len(ad_assets_input) else {}
+                    is_cr_update = bool(aa_input.get("cr_id"))
+                    
+                    if ad_asset_result.success and ad_asset_result.creative_id:
+                        if is_cr_update:
+                            modified_creative_ids.add(ad_asset_result.creative_id)
+                        else:
+                            created_creative_ids.add(ad_asset_result.creative_id)
+                    else:
+                        failed_ad_assets += 1
         
-        # 提取成功的 ID 清單
-        successful_campaign_ids = [r.campaign_id for r in results if r.success and r.campaign_id]
-        successful_ad_group_ids = []
-        successful_creative_ids = []
+        n_created_cpg = len(created_campaign_ids)
+        n_modified_cpg = len(modified_campaign_ids)
+        n_success_cpg = n_created_cpg + n_modified_cpg # Total unique successes
         
-        for campaign_result in results:
-            if campaign_result.success:
-                for ad_group_result in campaign_result.ad_group_results:
-                    if ad_group_result.success and ad_group_result.ad_group_id:
-                        successful_ad_group_ids.append(ad_group_result.ad_group_id)
-                        
-                        for ad_asset_result in ad_group_result.ad_asset_results:
-                            if ad_asset_result.success and ad_asset_result.creative_id:
-                                successful_creative_ids.append(ad_asset_result.creative_id)
+        n_created_grp = len(created_ad_group_ids)
+        n_modified_grp = len(modified_ad_group_ids)
+        n_success_grp = n_created_grp + n_modified_grp
+        
+        n_created_cr = len(created_creative_ids)
+        n_modified_cr = len(modified_creative_ids)
+        n_success_cr = n_created_cr + n_modified_cr
         
         return {
             "summary": {
-                "total_campaigns": total_campaigns,
-                "successful_campaigns": successful_campaigns,
+                "total_campaigns": total_campaigns_ops,
+                "successful_campaigns": n_success_cpg,
+                "created_campaigns": n_created_cpg,
+                "modified_campaigns": n_modified_cpg,
                 "failed_campaigns": failed_campaigns,
-                "campaign_success_rate": round(successful_campaigns / total_campaigns * 100, 2) if total_campaigns > 0 else 0,
-                "total_ad_groups": total_ad_groups,
-                "successful_ad_groups": successful_ad_groups,
-                "failed_ad_groups": total_ad_groups - successful_ad_groups,
-                "ad_group_success_rate": round(successful_ad_groups / total_ad_groups * 100, 2) if total_ad_groups > 0 else 0,
-                "total_ad_assets": total_ad_assets,
-                "successful_ad_assets": successful_ad_assets,
-                "failed_ad_assets": total_ad_assets - successful_ad_assets,
-                "creative_success_rate": round(successful_ad_assets / total_ad_assets * 100, 2) if total_ad_assets > 0 else 0
+                "campaign_success_rate": round(n_success_cpg / total_campaigns_ops * 100, 2) if total_campaigns_ops > 0 else 0,
+                
+                "total_ad_groups": total_ad_groups_ops,
+                "successful_ad_groups": n_success_grp,
+                "created_ad_groups": n_created_grp,
+                "modified_ad_groups": n_modified_grp,
+                "failed_ad_groups": failed_ad_groups,
+                "ad_group_success_rate": round(n_success_grp / total_ad_groups_ops * 100, 2) if total_ad_groups_ops > 0 else 0,
+                
+                "total_ad_assets": total_ad_assets_ops,
+                "successful_ad_assets": n_success_cr,
+                "created_ad_assets": n_created_cr,
+                "modified_ad_assets": n_modified_cr,
+                "failed_ad_assets": failed_ad_assets,
+                "creative_success_rate": round(n_success_cr / total_ad_assets_ops * 100, 2) if total_ad_assets_ops > 0 else 0
             },
             "successful_ids": {
-                "campaign_ids": successful_campaign_ids,
-                "ad_group_ids": successful_ad_group_ids,
-                "creative_ids": successful_creative_ids
+                "campaign_ids": list(created_campaign_ids | modified_campaign_ids),
+                "ad_group_ids": list(created_ad_group_ids | modified_ad_group_ids),
+                "creative_ids": list(created_creative_ids | modified_creative_ids)
             },
             "details": self._generate_detailed_results(results, campaigns_data),
             "errors": self._generate_error_summary(results, campaigns_data)
