@@ -237,6 +237,8 @@ body {
 
 .step-content {
     padding-left: 44px;
+    display: flex;
+    justify-content: space-between;
 }
 
 /* Account Dropdown */

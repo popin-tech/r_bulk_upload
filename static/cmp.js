@@ -44,11 +44,25 @@ async function loadAccounts() {
             }));
         });
 
-
-
         console.log("[loadAccounts] populated with", accounts.length, "accounts");
 
-
+        // Initialize Tom Select
+        if (window.TomSelect) {
+            // Destroy existing if any check handled by library usually or wrapper
+            // But simpler is to check if it's already customized?
+            // Tom Select modifies the element.
+            // Ideally we clear it first.
+            // However, for simplicity let's try just init.
+            new TomSelect("#account-select", {
+                create: false,
+                sortField: {
+                    field: "text",
+                    direction: "asc"
+                },
+                placeholder: 'Select an account...',
+                plugins: ['dropdown_input'], // if needed
+            });
+        }
 
     } catch (err) {
         console.error("[loadAccounts] error:", err);
@@ -68,7 +82,8 @@ function hideLastResultBtn() {
 }
 
 function handleAccountChange(event) {
-    selectedAccount = $(event.target).val();
+    // Tom Select might trigger change on the original select.
+    selectedAccount = $("#account-select").val(); // Standard jquery val() works even with Tom Select usually
     console.log("[handleAccountChange] selected:", selectedAccount);
 
 
@@ -547,11 +562,56 @@ function showResultModal(commitResult) {
     $container.empty();
 
     const processingResult = commitResult.processing_result;
-    if (!processingResult || !processingResult.details) {
-        $container.html('<div class="text-white p-3">No detail results available.</div>');
+    if (!processingResult) {
+        $container.html('<div class="text-white p-3">No results available.</div>');
     } else {
-        // Render Tree
-        renderSyncResults(processingResult.details, $container);
+        // Render Summary Header
+        if (processingResult.summary) {
+            const s = processingResult.summary;
+
+            // Helper to format block with conditional styling
+            const fmtItem = (icon, label, count, colorClass) => {
+                const finalClass = (count === 0) ? 'text-secondary' : colorClass;
+                // If count is 0, maybe we want it to look even more muted? text-secondary is gray.
+                return `<li class="${finalClass}"><i class="bi ${icon}"></i> ${label}: ${count}</li>`;
+            };
+
+            const fmtBlock = (title, created, modified, failed) => `
+                <div class="summary-block col-md-4">
+                    <h6>${title}</h6>
+                    <ul class="list-unstyled mb-0">
+                        ${fmtItem('bi-plus-circle', '新增', created, 'text-success')}
+                        ${fmtItem('bi-pencil', '修改', modified, 'text-primary')}
+                        ${fmtItem('bi-x-circle', '錯誤', failed, 'text-danger')}
+                    </ul>
+                </div>
+            `;
+
+            const summaryHtml = `
+                <div class="result-summary card mb-3 bg-dark text-light border-secondary">
+                    <div class="card-body py-2">
+                        <div class="row">
+                            ${fmtBlock('廣告活動 (Campaigns)', s.created_campaigns, s.modified_campaigns, s.failed_campaigns)}
+                            ${fmtBlock('廣告群組 (Ad Groups)', s.created_ad_groups, s.modified_ad_groups, s.failed_ad_groups)}
+                            ${fmtBlock('廣告素材 (Creatives)', s.created_ad_assets, s.modified_ad_assets, s.failed_ad_assets)}
+                        </div>
+                    </div>
+                </div>
+            `;
+            $container.append(summaryHtml);
+        } else {
+            // Fallback to simple details availcheck
+        }
+
+        if (!processingResult.details) {
+            $container.append('<div class="text-white p-3">No detail results available.</div>');
+        } else {
+            // Render Tree
+            // Wrap tree in a container
+            const $treeWrapper = $('<div class="result-tree-wrapper"></div>');
+            $container.append($treeWrapper);
+            renderSyncResults(processingResult.details, $treeWrapper);
+        }
     }
 
     // Show modal
