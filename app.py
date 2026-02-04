@@ -37,8 +37,18 @@ app.config["CRON_SECRET"] = os.getenv("CRON_SECRET", "f6d0f127521aec64a31c2840ac
 
 # Database Config
 # Format: mysql+pymysql://user:password@host:port/dbname
-# Default to sqlite for local dev if not configured
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", "mysql+pymysql://popin:popIn_gcp_2026@35.234.61.181:3306/budget_hunter")
+connection_name = os.getenv("CLOUDSQL_CONNECTION_NAME")
+db_user = os.getenv("DB_USER", "popin")
+db_pass = os.getenv("DB_PASS", "popIn_gcp_2026")
+db_name = os.getenv("DB_NAME", "budget_hunter")
+
+if connection_name:
+    # Cloud Run -> Cloud SQL via Unix Socket
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{db_user}:{db_pass}@/{db_name}?unix_socket=/cloudsql/{connection_name}"
+else:
+    # Local -> Cloud SQL via Public IP (TCP)
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", f"mysql+pymysql://{db_user}:{db_pass}@35.234.61.181:3306/{db_name}")
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ECHO"] = False
 
