@@ -1,5 +1,21 @@
 console.log("[cmp.js] Loaded");
 
+window.toggleLauncher = () => {
+    const menu = document.getElementById('app-launcher-menu');
+    menu.classList.toggle('show');
+
+    // Close when clicking outside
+    if (menu.classList.contains('show')) {
+        const closeHandler = (e) => {
+            if (!e.target.closest('.app-launcher-container')) {
+                menu.classList.remove('show');
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 0);
+    }
+};
+
 let selectedAccount = null;
 let uploadedFile = null;
 

@@ -1,0 +1,10 @@
+.gitignore
+__pycache__/
+dockergo.sh
+services/__pycache__/
+/venv
+.venv
+.DS_Store
+instance/
+*.pem
+!server-ca.pem
