@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from io import BytesIO
 import base64
@@ -13,6 +14,9 @@ from services.auth import AuthError, GoogleUser, verify_google_token
 from services.broadciel_client import BroadcielClient
 from services.upload_service import UploadParsingError, parse_excel, parse_excel_df, excel_to_campaign_json, generate_excel_from_api_data
 from services.campaign_bulk_processor import CampaignBulkProcessor
+from services.bh_service import BHService
+from services.bh_sync import BHSyncService
+from database import db, init_db
 
 app = Flask(__name__)
 
@@ -26,8 +30,32 @@ app.config["BROADCIEL_API_BASE_URL"] = os.getenv(
     "https://broadciel.ads.rixbeedesk.com/api/v2",
 )
 app.config["BROADCIEL_API_KEY"] = os.getenv("BROADCIEL_API_KEY", "")
+app.config["BROADCIEL_API_KEY"] = os.getenv("BROADCIEL_API_KEY", "")
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "20")) * 1024 * 1024
 app.config["ENABLE_FRONTEND"] = os.getenv("ENABLE_FRONTEND", "true").lower() == "true"
+app.config["CRON_SECRET"] = os.getenv("CRON_SECRET", "f6d0f127521aec64a31c2840ac7039f3")
+
+# Database Config
+# Format: mysql+pymysql://user:password@host:port/dbname
+# Default to sqlite for local dev if not configured
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", "mysql+pymysql://popin:popIn_gcp_2026@35.234.61.181:3306/budget_hunter")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ECHO"] = False
+
+# Initialize DB
+# SSL Configuration for Cloud SQL
+ca_cert_path = BASE_DIR / "server-ca.pem"
+if ca_cert_path.exists():
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "connect_args": {
+            "ssl": {
+                "ca": str(ca_cert_path),
+                "check_hostname": False,
+            }
+        }
+    }
+
+init_db(app)
 _ACCOUNTS_CACHE: list[dict[str, Any]] | None = None
 _ALLOWED_EMAILS_CACHE: set[str] | None = None
 _TOKEN_BY_EMAIL: dict[str, str] = {}
@@ -394,8 +422,205 @@ if app.config.get("ENABLE_FRONTEND", False):
     @app.route("/cmp")
     def cmp():
         if "user" not in session:
-            return redirect(url_for("login"))
+            return redirect(url_for("index"))
         return render_template("cmp.html")
 
+    @app.route("/bh")
+    def bh_index():
+        if "user" not in session:
+            return redirect(url_for("index"))
+        return render_template("bh.html")
+
+    # --- Budget Hunter APIs ---
+    
+    @app.route("/api/bh/upload", methods=["POST"])
+    def bh_upload():
+        user = _require_user()
+        if not isinstance(user, GoogleUser): return user
+        
+        file = request.files.get("file")
+        if not file: return _error("No file uploaded", 400)
+        
+        svc = BHService()
+        try:
+            result = svc.process_excel_upload(file.stream, user.email)
+            return jsonify({"status": "ok", "result": result})
+        except Exception as e:
+            app.logger.error(f"BH Upload Failed: {e}")
+            return _error(str(e), 500)
+
+    @app.route("/api/bh/accounts", methods=["GET"])
+    def bh_list_accounts():
+        user = _require_user()
+        if not isinstance(user, GoogleUser): return user
+        
+        search_term = request.args.get("search", "")
+        scope = request.args.get("scope", "mine")
+        
+        owner_filter = None
+        if scope == "mine":
+            owner_filter = user.email
+        
+        svc = BHService()
+        try:
+            data = svc.get_accounts(owner_filter, search_term)
+            return jsonify({"status": "ok", "accounts": data})
+        except Exception as e:
+            return _error(str(e), 500)
+
+
+
+    @app.route("/api/bh/download", methods=["POST"])
+    def bh_download():
+        user = _require_user()
+        if not isinstance(user, GoogleUser): return user
+        
+        data = request.get_json() or {}
+        search_term = data.get("search", "")
+        scope = data.get("scope", "mine")
+        
+        owner_filter = None
+        if scope == "mine":
+            owner_filter = user.email
+
+        svc = BHService()
+        try:
+            excel_bytes = svc.export_accounts_excel(owner_filter, search_term)
+            filename = f"budget_hunter_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            
+            return send_file(
+                BytesIO(excel_bytes),
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=filename
+            )
+        except Exception as e:
+            return _error(str(e), 500)
+
+    @app.route("/api/bh/sync", methods=["GET"])
+    def bh_sync():
+        user = _require_user()
+        if not isinstance(user, GoogleUser): return user
+        
+        # Stream logs
+        def generate():
+            svc = BHSyncService()
+            # Default to syncing 'yesterday' implicitly in service
+            for msg in svc.sync_daily_stats():
+                yield msg
+
+        from flask import stream_with_context
+        return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+    @app.route("/api/bh/account/<account_id>", methods=["POST"])
+    def bh_update_account(account_id):
+        user = _require_user()
+        if not isinstance(user, GoogleUser): return user
+        
+        data = request.get_json()
+        svc = BHService()
+        try:
+            svc.update_account(account_id, data, user.email)
+            return jsonify({"status": "ok"})
+        except Exception as e:
+            return _error(str(e), 500)
+
+    @app.route("/api/bh/account/<account_id>/daily", methods=["GET"])
+    def bh_account_daily(account_id):
+        user = _require_user()
+        if not isinstance(user, GoogleUser): return user
+        
+        svc = BHService()
+        try:
+            stats = svc.get_account_daily_stats(account_id)
+            return jsonify({"status": "ok", "stats": stats})
+        except Exception as e:
+            return _error(str(e), 500)
+
+    # --- BH Cron Jobs (Secure) ---
+    def _require_cron_auth():
+        # Check X-Scheduler-Secret or similar header
+        secret = request.headers.get("X-Scheduler-Secret")
+        expected = app.config.get("CRON_SECRET")
+        if not expected:
+            # If no secret is configured, deny all cron requests for security
+            return _error("Server Cron Secret not configured.", 500)
+        
+        if secret != expected:
+            return _error("Unauthorized Cron Request", 401)
+        return None
+
+    @app.route("/api/bh/cron/daily_sync", methods=["POST"])
+    def bh_cron_daily_sync():
+        # Security Check
+        auth_err = _require_cron_auth()
+        if auth_err: return auth_err
+        
+        svc = BHSyncService()
+        yesterday_dt = datetime.utcnow() + timedelta(hours=8) - timedelta(days=1)
+        target_date = yesterday_dt.strftime('%Y-%m-%d')
+        
+        app.logger.info(f"CRON: Starting Daily Sync for {target_date}")
+        
+        logs = []
+        try:
+            # Consume generator to run logic
+            for msg in svc.sync_daily_stats(target_date=target_date):
+                # msg is "data: {...}\n\n", we parse it for logging
+                if "{" in msg:
+                    try:
+                        json_str = msg.replace("data: ", "").strip()
+                        data = json.loads(json_str)
+                        logs.append(data.get('msg', ''))
+                    except: pass
+            
+            app.logger.info("CRON: Daily Sync Completed.")
+            return jsonify({"status": "ok", "date": target_date, "logs": logs})
+        except Exception as e:
+            app.logger.error(f"CRON Error: {e}")
+            return _error(str(e), 500)
+
+    @app.route("/api/bh/cron/intraday_sync", methods=["POST"])
+    def bh_cron_intraday_sync():
+        # Security Check
+        auth_err = _require_cron_auth()
+        if auth_err: return auth_err
+        
+        svc = BHSyncService()
+        app.logger.info(f"CRON: Starting Data Integrity Check")
+        
+        logs = []
+        try:
+            for msg in svc.sync_consistency_check():
+                if "{" in msg:
+                    try:
+                        json_str = msg.replace("data: ", "").strip()
+                        data = json.loads(json_str)
+                        logs.append(data.get('msg', ''))
+                    except: pass
+            
+            app.logger.info("CRON: Integrity Check Completed.")
+            return jsonify({"status": "ok", "logs": logs})
+        except Exception as e:
+            app.logger.error(f"CRON Error: {e}")
+            return _error(str(e), 500)
+
+# --- Cache Busting Helper ---
+@app.context_processor
+def override_url_for():
+    return dict(url_for=versioned_url_for)
+
+def versioned_url_for(endpoint, **values):
+    if endpoint == 'static':
+        filename = values.get('filename', None)
+        if filename:
+            file_path = os.path.join(app.root_path, endpoint, filename)
+            try:
+                values['v'] = int(os.path.getmtime(file_path))
+            except OSError:
+                pass
+    return url_for(endpoint, **values)
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    init_db(app)
+    app.run(host="0.0.0.0", port=8080, debug=True)
