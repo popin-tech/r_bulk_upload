@@ -33,7 +33,7 @@ steps:
         '--allow-unauthenticated',
         '--port=8080',
         '--service-account=439393162392-compute@developer.gserviceaccount.com',
-        '--set-env-vars=GOOGLE_CLIENT_ID=439393162392-cjutf0jdpofs237mqu52goiafq3gqvtg.apps.googleusercontent.com,BROADCIEL_API_BASE_URL=https://broadciel.ads.rixbeedesk.com/api/v2'
+        '--set-env-vars=GOOGLE_CLIENT_ID=439393162392-cjutf0jdpofs237mqu52goiafq3gqvtg.apps.googleusercontent.com,BROADCIEL_API_BASE_URL=https://broadciel.ads.rixbeedesk.com/api/v2,CLOUDSQL_CONNECTION_NAME=popinpoc1:asia-east1:internal-tool'
       ]
 
 images:
