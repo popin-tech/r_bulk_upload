@@ -105,11 +105,16 @@ class BHSyncService:
                             # Upsert DB
                             self._upsert_stats(acc.account_id, target_date, stats)
                             
-                            # Detailed Log
+                            # Log for R Platform
+                            print(f"[BH-R-Daily-Sync] Account {acc.account_id} Date {target_date}: {stats}")
+                            print(f"[BH-R-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})")
+                            
+                            # Detailed Log for SSE
                             log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={stats.get('spend',0)}, Clicks={stats.get('clicks',0)}"
                             yield f"data: {json.dumps({'msg': log_msg})}\n\n"
                             
                             count_updated += 1
+
                         
                         yield f"data: {json.dumps({'msg': f'  Batch processed.'})}\n\n"
                         
@@ -162,6 +167,9 @@ class BHSyncService:
                                 print(f"[DEBUG DB-UPSERT] Lookup Key: {key} -> Stats Found: {stats}")
                             
                             self._upsert_stats(acc.account_id, target_date, stats)
+                            
+                            # Log for D Platform
+                            print(f"[BH-D-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})")
                             
                             # Detailed Log
                             log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={stats.get('spend',0)}, Clicks={stats.get('clicks',0)}"
@@ -278,6 +286,10 @@ class BHSyncService:
                                 key = (acc.account_id, target_str)
                                 stats = stats.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
                                 
+                                # Log for R Platform (Intraday)
+                                print(f"[BH-R-Intraday-Sync] Account {acc.account_id} Date {target_str}: {stats}")
+                                print(f"[BH-R-Intraday-Sync-SQL] Account {acc.account_id} Date {target_str} -> Upserted (Spend={stats.get('spend')})")
+                                
                         elif acc.platform == 'D':
                             # Fetch Token
                             d_token_row = BHDAccountToken.query.filter_by(account_id=acc.account_id).first()
@@ -286,10 +298,13 @@ class BHSyncService:
                                 continue
                             
                             d_client = DiscoveryClient(d_token_row.token)
-                            # Pass explicit account ID
-                            d_map = d_client.fetch_daily_stats([str(acc.account_id)], target_str, target_str)
+                            # Pass explicit account ID and Intraday Log Tag
+                            d_map = d_client.fetch_daily_stats([str(acc.account_id)], target_str, target_str, log_tag='[BH-D-Intraday-Sync]')
                             key = (acc.account_id, target_str)
                             stats = d_map.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                            
+                            # Log for D Platform (Intraday)
+                            print(f"[BH-D-Intraday-Sync-SQL] Account {acc.account_id} Date {target_str} -> Upserted (Spend={stats.get('spend')})")
                         
                         # Upsert
                         self._upsert_stats(acc.account_id, target_str, stats)

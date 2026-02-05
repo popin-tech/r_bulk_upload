@@ -30,6 +30,10 @@ const app = createApp({
         const searchQuery = ref('');
         const searchScope = ref('mine'); // 'mine' or 'all'
 
+        // Bulk Selection
+        const selectedAccountIds = ref([]);
+
+
         // Drawer State
         const isDrawerOpen = ref(false);
         const selectedAccount = ref(null);
@@ -46,6 +50,10 @@ const app = createApp({
         const syncModalInstance = ref(null);
 
         // --- Computed ---
+        const isAllSelected = computed(() => {
+            return accounts.value.length > 0 && selectedAccountIds.value.length === accounts.value.length;
+        });
+
 
 
         // --- Methods ---
@@ -63,7 +71,9 @@ const app = createApp({
                 const data = await res.json();
                 if (data.status === 'ok') {
                     accounts.value = data.accounts;
+                    selectedAccountIds.value = []; // Clear selection on reload
                 }
+
             } catch (e) {
                 console.error('Failed to load accounts', e);
             } finally {
@@ -79,6 +89,10 @@ const app = createApp({
                 loadAccounts();
             }, 300);
         };
+
+        watch(searchScope, () => {
+            loadAccounts();
+        });
 
         const loadDailyStats = async (accountId) => {
             dailyStats.value = [];
@@ -220,10 +234,9 @@ const app = createApp({
         };
 
         const getProgressColor = (percent) => {
-            if (percent < 80) return 'bg-danger-custom'; // Red (Lagging)
-            if (percent < 90) return 'bg-warning-custom'; // Yellow
-            if (percent <= 100) return 'bg-success-custom'; // Green
-            return 'bg-danger-custom'; // Red (Over budget)
+            if (percent < 95) return 'text-custom-red';
+            if (percent < 100) return 'text-custom-orange';
+            return 'text-custom-green';
         };
 
         const triggerDownload = async () => {
@@ -257,7 +270,57 @@ const app = createApp({
             }
         };
 
+        // Bulk Actions
+        const toggleSelectAll = () => {
+            if (isAllSelected.value) {
+                selectedAccountIds.value = [];
+            } else {
+                selectedAccountIds.value = accounts.value.map(a => a.account_id);
+            }
+        };
+
+        const clearSelection = () => {
+            selectedAccountIds.value = [];
+        };
+
+        const toggleSelection = (accId) => {
+            const idx = selectedAccountIds.value.indexOf(accId);
+            if (idx > -1) {
+                selectedAccountIds.value.splice(idx, 1);
+            } else {
+                selectedAccountIds.value.push(accId);
+            }
+        };
+
+        const archiveSelected = async () => {
+            if (selectedAccountIds.value.length === 0) return;
+
+            if (!confirm(`Are you sure you want to archive ${selectedAccountIds.value.length} accounts?`)) return;
+
+            try {
+                const res = await fetch('/api/bh/accounts/bulk-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_ids: selectedAccountIds.value,
+                        status: 'archived'
+                    })
+                });
+                const data = await res.json();
+
+                if (data.status === 'ok') {
+                    alert(`Successfully archived ${data.updated_count} accounts.`);
+                    loadAccounts(); // will clear selection too
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Request failed: ' + e.message);
+            }
+        };
+
         // --- Lifecycle ---
+
         onMounted(() => {
 
             loadAccounts();
@@ -300,8 +363,17 @@ const app = createApp({
                     return Number(n).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
                 } catch (e) { return '0'; }
             },
-            mathMin: (a, b) => Math.min(a, b)
+            mathMin: (a, b) => Math.min(a, b),
+
+            // Bulk
+            selectedAccountIds,
+            isAllSelected,
+            toggleSelectAll,
+            toggleSelection,
+            clearSelection,
+            archiveSelected
         };
+
     }
 });
 

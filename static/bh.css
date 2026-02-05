@@ -77,36 +77,24 @@ body {
     border-right: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* Progress Bars */
-.progress-stacked {
-    height: 6px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
-    overflow: hidden;
-    margin-top: 4px;
+/* Text Colors for KPI */
+.text-custom-red {
+    color: #ef4444 !important;
 }
 
-.progress-bar-fill {
-    height: 100%;
-    border-radius: 3px;
-    transition: width 0.3s ease;
+.text-custom-orange {
+    color: #f59e0b !important;
 }
 
-.bg-success-custom {
-    background-color: #10b981;
+.text-custom-green {
+    color: #10b981 !important;
 }
 
-/* Green */
-.bg-warning-custom {
-    background-color: #f59e0b;
+.table-num-lg {
+    font-size: 15px !important;
+    font-weight: 600;
+    letter-spacing: 0.5px;
 }
-
-/* Yellow */
-.bg-danger-custom {
-    background-color: #ef4444;
-}
-
-/* Red */
 
 /* Drawer (Side Panel) */
 .bh-drawer-backdrop {
@@ -226,7 +214,32 @@ body {
 .table-transparent {
     --bs-table-bg: transparent !important;
     --bs-table-color: white !important;
+    --bs-table-border-color: rgba(255, 255, 255, 0.3) !important;
     /* Safety fallback */
     --bs-table-hover-bg: rgba(255, 255, 255, 0.1) !important;
     --bs-table-hover-color: white !important;
+}
+
+/* Loading Overlay */
+.loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(4px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+    border-radius: inherit;
+    /* inherit panel border radius */
+}
+
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
 }
