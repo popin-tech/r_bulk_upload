@@ -44,7 +44,8 @@ db_name = os.getenv("DB_NAME", "budget_hunter")
 
 if connection_name:
     # Cloud Run -> Cloud SQL via Unix Socket
-    app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{db_user}:{db_pass}@/{db_name}?unix_socket=/cloudsql/{connection_name}"
+    # Explicitly use 'localhost' as host, but force unix_socket via query param
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{db_user}:{db_pass}@localhost/{db_name}?unix_socket=/cloudsql/{connection_name}"
 else:
     # Local -> Cloud SQL via Public IP (TCP)
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", f"mysql+pymysql://{db_user}:{db_pass}@35.234.61.181:3306/{db_name}")
