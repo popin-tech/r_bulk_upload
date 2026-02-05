@@ -44,27 +44,28 @@ db_name = os.getenv("DB_NAME", "budget_hunter")
 
 if connection_name:
     # Cloud Run -> Cloud SQL via Unix Socket
-    # Explicitly use 'localhost' as host, but force unix_socket via query param
-    app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{db_user}:{db_pass}@localhost/{db_name}?unix_socket=/cloudsql/{connection_name}"
+    # Use empty host and pass socket via connect_args for PyMySQL stability
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{db_user}:{db_pass}@/{db_name}"
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "connect_args": {
+            "unix_socket": f"/cloudsql/{connection_name}"
+        }
+    }
 else:
     # Local -> Cloud SQL via Public IP (TCP)
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", f"mysql+pymysql://{db_user}:{db_pass}@35.234.61.181:3306/{db_name}")
-
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ECHO"] = False
-
-# Initialize DB
-# SSL Configuration for Cloud SQL
-ca_cert_path = BASE_DIR / "server-ca.pem"
-if ca_cert_path.exists():
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "connect_args": {
-            "ssl": {
-                "ca": str(ca_cert_path),
-                "check_hostname": False,
+    
+    # SSL Configuration (Only for TCP)
+    ca_cert_path = BASE_DIR / "server-ca.pem"
+    if ca_cert_path.exists():
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+            "connect_args": {
+                "ssl": {
+                    "ca": str(ca_cert_path),
+                    "check_hostname": False,
+                }
             }
         }
-    }
 
 init_db(app)
 _ACCOUNTS_CACHE: list[dict[str, Any]] | None = None
