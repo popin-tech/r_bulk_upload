@@ -385,6 +385,32 @@ class BHService:
         db.session.commit()
         return True
 
+    def update_accounts_status(self, account_ids: list[str], status: str) -> int:
+        """
+        Bulk update account status.
+        Returns number of rows updated.
+        """
+        if not account_ids:
+            return 0
+            
+        # status must be 'active' or 'archived' (or others if defined)
+        if status not in ['active', 'archived']:
+            raise ValueError(f"Invalid status: {status}")
+            
+        try:
+            # Efficient Bulk Update
+            # synchronize_session=False is faster for bulk updates but session objects might be stale 
+            # (usually fine for this use case as we reload after)
+            updated_count = BHAccount.query.filter(
+                BHAccount.account_id.in_(account_ids)
+            ).update({BHAccount.status: status}, synchronize_session=False)
+            
+            db.session.commit()
+            return updated_count
+        except Exception as e:
+            db.session.rollback()
+            raise e
+
     def get_account_daily_stats(self, account_id: str) -> list[dict]:
         """
         Get daily stats for an account.

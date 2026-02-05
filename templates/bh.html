@@ -59,7 +59,7 @@
                     </svg>
                 </div>
                 <!-- <img src="{{ url_for('static', filename='broadciellogo.png') }}" class="brand-logo" alt="Logo"> -->
-                <span class="brand-name">Budget Hunter</span>
+                <span class="brand-name">Budget Hunter 神盾追速</span>
             </div>
         </div>
 
@@ -130,19 +130,51 @@
                 </div>
             </div>
 
-            <div class="row mb-3">
-                <div class="col-12">
+            <!-- Toolbar: Download (Left) + Bulk Actions (Right) -->
+            <!-- Toolbar: Download (Left) + Bulk Actions (Right) -->
+            <div class="d-flex justify-content-between align-items-center mb-3" style="min-height: 41px;">
+                <!-- Left: Download -->
+                <div>
                     <button class="btn btn-primary btn-sm" @click="triggerDownload">
                         <i class="fas fa-download me-2"></i>Download
                     </button>
                 </div>
+
+                <!-- Right: Bulk Actions -->
+                <transition name="fade">
+                    <div v-if="selectedAccountIds.length > 0" class="d-flex align-items-center gap-3 px-3 py-1 rounded"
+                        style="background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4);">
+                        <span class="text-white fw-bold small">[[ selectedAccountIds.length ]] Selected</span>
+                        <div class="vr bg-white opacity-25"></div>
+                        <button class="btn btn-sm btn-link text-white text-decoration-none p-0 small"
+                            @click="clearSelection()">
+                            Clear
+                        </button>
+                        <div class="vr bg-white opacity-25"></div>
+                        <button class="btn btn-danger btn-sm d-flex align-items-center gap-2" @click="archiveSelected">
+                            <i class="fas fa-archive"></i> Archive
+                        </button>
+                    </div>
+                </transition>
             </div>
 
             <!-- Main Table -->
-            <div class="glass-panel p-0 overflow-hidden">
+            <div class="glass-panel p-0 overflow-hidden position-relative">
+                <transition name="fade">
+                    <div class="loading-overlay" v-if="loading">
+                        <div class="text-white d-flex flex-column align-items-center">
+                            <i class="fas fa-spinner fa-spin fa-2x mb-2"></i>
+                            <span>Loading...</span>
+                        </div>
+                    </div>
+                </transition>
                 <table class="table table-dark table-transparent table-hover mb-0 align-middle">
                     <thead>
                         <tr style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8;">
+                            <th style="width: 40px;" class="text-center">
+                                <input type="checkbox" class="form-check-input" :checked="isAllSelected"
+                                    @change="toggleSelectAll()">
+                            </th>
                             <th style="width: 50px;">Sys</th>
                             <th>ID</th>
                             <th>Account Name</th>
@@ -154,13 +186,15 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-if="loading">
-                            <td colspan="8" class="text-center py-5">Loading...</td>
-                        </tr>
-                        <tr v-else-if="accounts.length === 0">
+                        <tr v-if="accounts.length === 0 && !loading">
                             <td colspan="8" class="text-center py-5">No accounts found. Upload some!</td>
                         </tr>
                         <tr v-for="acc in accounts" :key="acc.id" @click="openDrawer(acc)" style="cursor: pointer;">
+                            <td class="text-center" @click.stop>
+                                <input type="checkbox" class="form-check-input"
+                                    :checked="selectedAccountIds.includes(acc.account_id)"
+                                    @change="toggleSelection(acc.account_id)">
+                            </td>
                             <td>
                                 <span class="badge" :class="acc.platform === 'R' ? 'bg-primary' : 'bg-info'">
                                     [[ acc.platform ]]
@@ -171,51 +205,47 @@
 
                             <!-- Yesterday Spend -->
                             <td>
-                                <div class="d-flex justify-content-between mb-1" style="font-size: 11px;">
-                                    <span>[[ formatNumber(acc.yesterday_spend) ]]</span>
-                                    <span class="text-white-50">/ [[ formatNumber(acc.daily_budget) ]]</span>
-                                </div>
-                                <div class="progress-stacked" style="height: 6px;">
-                                    <div class="progress-bar-fill"
-                                        :class="getProgressColor((acc.yesterday_spend / (acc.daily_budget || 1)) * 100)"
-                                        :style="{ width: mathMin((acc.yesterday_spend / (acc.daily_budget || 1)) * 100, 100) + '%' }">
-                                    </div>
+                                <div class="d-flex flex-column">
+                                    <span class="table-num-lg"
+                                        :class="getProgressColor((acc.yesterday_spend / (acc.daily_budget || 1)) * 100)">
+                                        [[ formatNumber(acc.yesterday_spend) ]]
+                                    </span>
+                                    <span class="text-white-50" style="font-size: 13px;">/ [[
+                                        formatNumber(acc.daily_budget) ]]</span>
                                 </div>
                             </td>
 
                             <!-- Total Spend -->
                             <td>
-                                <div class="d-flex justify-content-between mb-1" style="font-size: 11px;">
-                                    <span>[[ formatNumber(acc.total_spend) ]]</span>
-                                    <span class="text-white-50">/ [[ formatNumber(acc.budget) ]]</span>
-                                </div>
-                                <div class="progress-stacked" style="height: 6px;">
-                                    <div class="progress-bar-fill" :class="getProgressColor(acc.budget_percent)"
-                                        :style="{ width: mathMin(acc.budget_percent, 100) + '%' }">
-                                    </div>
+                                <div class="d-flex flex-column">
+                                    <span class="table-num-lg" :class="getProgressColor(acc.budget_percent)">
+                                        [[ formatNumber(acc.total_spend) ]]
+                                    </span>
+                                    <span class="text-white-50" style="font-size: 13px;">/ [[ formatNumber(acc.budget)
+                                        ]]</span>
                                 </div>
                             </td>
 
                             <td>
-                                <div class="d-flex flex-column" style="font-size: 11px; line-height: 1.2;">
+                                <div class="d-flex flex-column" style="font-size: 12px; line-height: 1.2;">
                                     <span>[[ formatDate(acc.start_date) ]] ~ [[ formatDate(acc.end_date) ]]</span>
                                     <span class="text-white-50 small">[[ acc.remaining_days ]] days left</span>
                                 </div>
                             </td>
                             <td>
-                                <div class="d-flex justify-content-between mb-1" style="font-size: 11px;">
-                                    <span>[[ formatNumber(acc.current_cpc, 1) ]]</span>
-                                    <span class="text-white-50" v-if="acc.cpc_goal">/ [[ formatNumber(acc.cpc_goal, 1)
-                                        ]]</span>
-                                    <span class="text-white-50" v-else>/ -</span>
+                                <div class="d-flex flex-column">
+                                    <span class="table-num-lg">[[ formatNumber(acc.current_cpc, 1) ]]</span>
+                                    <span class="text-white-50" v-if="acc.cpc_goal" style="font-size: 13px;">/ [[
+                                        formatNumber(acc.cpc_goal, 1) ]]</span>
+                                    <span class="text-white-50" v-else style="font-size: 13px;">/ -</span>
                                 </div>
                             </td>
                             <td>
-                                <div class="d-flex justify-content-between mb-1" style="font-size: 11px;">
-                                    <span>[[ formatNumber(acc.current_cpa) ]]</span>
-                                    <span class="text-white-50" v-if="acc.cpa_goal">/ [[ formatNumber(acc.cpa_goal)
-                                        ]]</span>
-                                    <span class="text-white-50" v-else>/ -</span>
+                                <div class="d-flex flex-column">
+                                    <span class="table-num-lg">[[ formatNumber(acc.current_cpa) ]]</span>
+                                    <span class="text-white-50" v-if="acc.cpa_goal" style="font-size: 13px;">/ [[
+                                        formatNumber(acc.cpa_goal) ]]</span>
+                                    <span class="text-white-50" v-else style="font-size: 13px;">/ -</span>
                                 </div>
                             </td>
                         </tr>

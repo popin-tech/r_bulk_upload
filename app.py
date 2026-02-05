@@ -537,6 +537,26 @@ if app.config.get("ENABLE_FRONTEND", False):
         except Exception as e:
             return _error(str(e), 500)
 
+    @app.route("/api/bh/accounts/bulk-status", methods=["POST"])
+    def bh_bulk_status():
+        user = _require_user()
+        if not isinstance(user, GoogleUser): return user
+        
+        data = request.get_json() or {}
+        account_ids = data.get("account_ids", [])
+        status = data.get("status")
+        
+        if not account_ids or not status:
+            return _error("Missing account_ids or status", 400)
+            
+        svc = BHService()
+        try:
+            count = svc.update_accounts_status(account_ids, status)
+            app.logger.info(f"User {user.email} bulk updated {len(account_ids)} accounts to {status}. Success: {count}")
+            return jsonify({"status": "ok", "updated_count": count})
+        except Exception as e:
+            return _error(str(e), 500)
+
     @app.route("/api/bh/account/<account_id>/daily", methods=["GET"])
     def bh_account_daily(account_id):
         user = _require_user()

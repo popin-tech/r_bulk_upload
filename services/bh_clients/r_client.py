@@ -87,15 +87,12 @@ class RixbeeClient:
             params.append(('user_id[]', aid))
 
         # Debug Logging
-        print(f"--- R API REQUEST ({token_type}) ---")
-        print(f"URL: {self.API_URL}")
-        print(f"Headers: {headers}")
-        print(f"Params: {params}")
+        # print(f"--- R API REQUEST ({token_type}) ---")
         
         response = requests.get(self.API_URL, headers=headers, params=params, timeout=60)
         
-        print(f"--- R API RESPONSE ({response.status_code}) ---")
-        print(f"Body: {response.text[:1000]}") # Truncate if too long, but usually fine
+        # print(f"--- R API RESPONSE ({response.status_code}) ---")
+
         
         if response.status_code != 200:
             raise Exception(f"API Error {response.status_code}: {response.text}")
