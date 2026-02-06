@@ -4,6 +4,8 @@ import base64
 from datetime import datetime, timedelta
 import logging
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -49,15 +51,14 @@ class DiscoveryClient:
 
     def fetch_daily_stats(self, account_ids: list[str], start_date: str, end_date: str, log_tag: str = '[BH-D-Daily-Sync]') -> dict:
         """
-        Fetch stats for Discovery platform.
+        Fetch stats for Discovery platform using Multithreading.
         Output: { (account_id, date): {spend, impressions, clicks, conversions} }
         """
         
-        # 1. Get Campaigns
+        # 1. Get Campaigns (Sequential)
         headers = self._get_headers()
-        params = {'country_id': 'tw'} # From PHP
+        params = {'country_id': 'tw'}
         
-        # print(f"Fetching D Campaigns List from {self.CAMPAIGN_LIST_URL}...")
         resp = requests.get(self.CAMPAIGN_LIST_URL, headers=headers, params=params, timeout=30)
         if resp.status_code != 200:
             logger.error(f"Failed to fetch campaigns: {resp.text}")
@@ -65,27 +66,26 @@ class DiscoveryClient:
             return {}
             
         campaigns = resp.json().get('data', [])
-        # print(f"Found {len(campaigns)} campaigns.")
         
         if not campaigns:
             return {}
 
-        # 2. Get Ads for each Campaign
         stats_result = {}
+        stats_lock = threading.Lock()
         
-        for i, cam in enumerate(campaigns):
+        # Helper: Fetch Ads for a Campaign
+        def _fetch_ads(cam):
             cam_id = str(cam.get('mongo_id'))
             acc_id = str(cam.get('account_id')) 
             
-            # Fallback: If API returns no ID, but we were given a specific single ID to fetch, assume it belongs to that ID.
+            # Fallback acc_id logic
             if (not acc_id or acc_id == 'None') and account_ids and len(account_ids) == 1:
                 acc_id = str(account_ids[0])
 
             if not acc_id or acc_id == 'None':
-                # print(f"  [WARNING] No Account ID for Campaign {cam.get('id')} (Acc None), skipping...")
-                continue
+                return []
             
-            # Optimization: Skip expired campaigns
+            # Date Check Logic
             cam_end_str = cam.get('end_date')
             if cam_end_str:
                 try:
@@ -98,98 +98,108 @@ class DiscoveryClient:
                     req_start = datetime.strptime(start_date, '%Y-%m-%d')
                     
                     if req_start > cutoff_date:
-                        continue
-                        
-                except Exception as e:
-                    # print(f"  Date check warning for cam {cam_id}: {e}")
+                        return []
+                except Exception:
                     pass
 
-            # Removed verbose processing log: print(f"Processing Campaign...")
-            
-            # Fetch Ads
             ad_list_url = self.AD_LIST_BASE_URL.format(cam_id)
             try:
                 ad_resp = requests.get(ad_list_url, headers=headers, timeout=20)
                 if ad_resp.status_code != 200:
-                    # print(f"  Failed to fetch ads for cam {cam_id}: {ad_resp.status_code}")
-                    continue
-            except Exception as e:
-                # print(f"  Error fetching ads for cam {cam_id}: {e}")
-                continue
+                    return []
+                ads = ad_resp.json().get('data', [])
+                if not ads: return []
                 
-            ads = ad_resp.json().get('data', [])
-            if not ads:
-                continue
-            
-            # 3. Get Report for each Ad
-            for j, ad in enumerate(ads):
-                ad_id = str(ad.get('mongo_id'))
-                report_cam_id = str(ad.get('campaign', cam_id))
-                
-                # API expects YYYYMMDD format (no hyphens)
-                s_date = start_date.replace('-', '')
-                e_date = end_date.replace('-', '')
-                
-                report_url = self.REPORT_BASE_URL.format(report_cam_id, ad_id, s_date, e_date)
-                
-                # Fetch Report - Retry Logic
-                retry_count = 0
-                max_retries = 3
-                report_data = []
-                
-                while retry_count < max_retries:
-                    try:
-                        rep_resp = requests.get(report_url, headers=headers, timeout=20)
-                        if rep_resp.status_code == 200:
-                            r_json = rep_resp.json()
-                            
-                            if r_json.get('code') == 1 and 'operateTooMuch' in r_json.get('msg', ''):
-                                print("    Rate limit hit, sleeping 1s...")
-                                time.sleep(1)
-                                retry_count += 1
-                                continue
-                                
-                            report_data = r_json.get('data', [])
-                            # Removed [D-RAW-DATA] log
-                            break
-                        else:
-                            # print(f"    Error {rep_resp.status_code} fetching report.")
-                            retry_count += 1
-                            time.sleep(1)
-                    except Exception as e:
-                         # print(f"    Exc fetching report: {e}")
-                         retry_count += 1
-                         time.sleep(1)
-                
-                # Aggregate Stats
-                if report_data:
-                    data_list = report_data.values() if isinstance(report_data, dict) else report_data
-                    
-                    for day_stat in data_list:
-                        # Removed [DATA FOUND] log
-                        
-                        date_str = day_stat.get('date', day_stat.get('day'))
-                        if not date_str:
-                            continue
-                            
-                        key = (acc_id, date_str)
-                        if key not in stats_result:
-                            stats_result[key] = {
-                                'spend': 0.0,
-                                'impressions': 0,
-                                'clicks': 0,
-                                'conversions': 0
-                            }
-                            
-                        stats_result[key]['spend'] += float(day_stat.get('charge', day_stat.get('cost', 0)))
-                        stats_result[key]['impressions'] += int(day_stat.get('imp', 0))
-                        stats_result[key]['clicks'] += int(day_stat.get('click', 0))
-                        stats_result[key]['conversions'] += int(day_stat.get('cv', 0))
+                # Attach context to ads
+                for ad in ads:
+                    ad['__cam_id'] = cam_id
+                    ad['__acc_id'] = acc_id
+                return ads
+            except Exception:
+                return []
 
-            # Debug: Print running total for this account
-            relevant_keys = [k for k in stats_result.keys() if k[0] == acc_id]
-            for rk in relevant_keys:
-                # RENAMED LOG
-                print(f"{log_tag} Account {acc_id} Date {rk[1]}: {stats_result[rk]}")
+        # Helper: Fetch Report for an Ad
+        def _fetch_report(ad):
+            ad_id = str(ad.get('mongo_id'))
+            cam_id = ad.get('__cam_id')
+            report_cam_id = str(ad.get('campaign', cam_id))
+            acc_id = ad.get('__acc_id')
+            
+            s_date = start_date.replace('-', '')
+            e_date = end_date.replace('-', '')
+            
+            report_url = self.REPORT_BASE_URL.format(report_cam_id, ad_id, s_date, e_date)
+            
+            retry_count = 0
+            max_retries = 3
+            report_data = []
+            
+            while retry_count < max_retries:
+                try:
+                    rep_resp = requests.get(report_url, headers=headers, timeout=20)
+                    if rep_resp.status_code == 200:
+                        r_json = rep_resp.json()
+                        if r_json.get('code') == 1 and 'operateTooMuch' in r_json.get('msg', ''):
+                            print("    Rate limit hit, sleeping 1s...")
+                            time.sleep(1)
+                            retry_count += 1
+                            continue
+                        report_data = r_json.get('data', [])
+                        break
+                    else:
+                        retry_count += 1
+                        time.sleep(1)
+                except Exception:
+                    retry_count += 1
+                    time.sleep(1)
+            
+            if not report_data:
+                return
+                
+            data_list = report_data.values() if isinstance(report_data, dict) else report_data
+            
+            with stats_lock:
+                for day_stat in data_list:
+                    date_str = day_stat.get('date', day_stat.get('day'))
+                    if not date_str: continue
+                        
+                    key = (acc_id, date_str)
+                    if key not in stats_result:
+                        stats_result[key] = {'spend': 0.0, 'impressions': 0, 'clicks': 0, 'conversions': 0}
+                        
+                    stats_result[key]['spend'] += float(day_stat.get('charge', day_stat.get('cost', 0)))
+                    stats_result[key]['impressions'] += int(day_stat.get('imp', 0))
+                    stats_result[key]['clicks'] += int(day_stat.get('click', 0))
+                    stats_result[key]['conversions'] += int(day_stat.get('cv', 0))
+
+        # 2. Parallel Fetch Ads (Max Workers = 10)
+        all_ads = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(_fetch_ads, cam) for cam in campaigns]
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    all_ads.extend(result)
+        
+        # 3. Parallel Fetch Reports (Max Workers = 10)
+        # Note: all_ads now contains ads from ALL campaigns managed by this token
+        if all_ads:
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = [executor.submit(_fetch_report, ad) for ad in all_ads]
+                # Wait for all to complete
+                for future in as_completed(futures):
+                    future.result() # Check for exceptions if needed
+
+        # Debug: Print Final Totals Logic
+        # Group keys by Account for logging
+        acc_keys = {}
+        for (acc_id, date_str) in stats_result.keys():
+            if acc_id not in acc_keys: acc_keys[acc_id] = []
+            acc_keys[acc_id].append(date_str)
+            
+        for acc_id, dates in acc_keys.items():
+            for d in dates:
+                key = (acc_id, d)
+                print(f"{log_tag} Account {acc_id} Date {d}: {stats_result[key]}")
 
         return stats_result

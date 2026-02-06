@@ -1,4 +1,5 @@
 import os
+import time
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -472,6 +473,10 @@ if app.config.get("ENABLE_FRONTEND", False):
         owner_filter = None
         if scope == "mine":
             owner_filter = user.email
+            
+        # Admin Override: benson@popin.cc always sees all accounts
+        if user.email == "benson@popin.cc":
+            owner_filter = None
         
         svc = BHService()
         try:
@@ -593,6 +598,7 @@ if app.config.get("ENABLE_FRONTEND", False):
         target_date = yesterday_dt.strftime('%Y-%m-%d')
         
         app.logger.info(f"CRON: Starting Daily Sync for {target_date}")
+        start_time = time.time()
         
         logs = []
         try:
@@ -604,9 +610,14 @@ if app.config.get("ENABLE_FRONTEND", False):
                         json_str = msg.replace("data: ", "").strip()
                         data = json.loads(json_str)
                         logs.append(data.get('msg', ''))
+                        logs.append(data.get('msg', ''))
                     except: pass
+
+            elapsed = time.time() - start_time
+            time_str = f"{int(elapsed // 60)}分{int(elapsed % 60)}秒({int(elapsed)}秒)"
             
-            app.logger.info("CRON: Daily Sync Completed.")
+            app.logger.info(f"CRON: Daily Sync Completed. Duration: {time_str}")
+            logs.append(f"總耗時時間 {time_str}")
             return jsonify({"status": "ok", "date": target_date, "logs": logs})
         except Exception as e:
             app.logger.error(f"CRON Error: {e}")
@@ -620,6 +631,7 @@ if app.config.get("ENABLE_FRONTEND", False):
         
         svc = BHSyncService()
         app.logger.info(f"CRON: Starting Data Integrity Check")
+        start_time = time.time()
         
         logs = []
         try:
@@ -629,9 +641,14 @@ if app.config.get("ENABLE_FRONTEND", False):
                         json_str = msg.replace("data: ", "").strip()
                         data = json.loads(json_str)
                         logs.append(data.get('msg', ''))
+                        logs.append(data.get('msg', ''))
                     except: pass
             
-            app.logger.info("CRON: Integrity Check Completed.")
+            elapsed = time.time() - start_time
+            time_str = f"{int(elapsed // 60)}分{int(elapsed % 60)}秒({int(elapsed)}秒)"
+
+            app.logger.info(f"CRON: Integrity Check Completed. Duration: {time_str}")
+            logs.append(f"總耗時時間 {time_str}")
             return jsonify({"status": "ok", "logs": logs})
         except Exception as e:
             app.logger.error(f"CRON Error: {e}")

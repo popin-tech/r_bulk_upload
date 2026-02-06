@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 from database import db, BHAccount, BHDailyStats, BHDAccountToken
 from services.bh_clients.r_client import RixbeeClient
 from services.bh_clients.d_client import DiscoveryClient
+from flask import current_app
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import queue
 import logging
 
 class BHSyncService:
@@ -219,100 +222,154 @@ class BHSyncService:
             raise e
 
     def sync_consistency_check(self):
-        yield f"data: {json.dumps({'msg': 'Starting Data Integrity Check...'})}\n\n"
+        yield f"data: {json.dumps({'msg': 'Starting Data Integrity Check (Parallel)...'})}\n\n"
         
         try:
-            # TW Time for "Yesterday"
             yesterday = datetime.utcnow() + timedelta(hours=8) - timedelta(days=1)
             yesterday_date = yesterday.date()
             
             # Fetch Active Accounts
             accounts = BHAccount.query.filter_by(status='active').all()
             total = len(accounts)
-            yield f"data: {json.dumps({'msg': f'Scanning {total} active accounts...'})}\n\n"
+            yield f"data: {json.dumps({'msg': f'Scanning {total} active accounts with 5 workers...'})}\n\n"
 
-            r_client = RixbeeClient()
-            # d_client init moved to inside loop because it needs dynamic token
+            # Prepare for Threading
+            app = current_app._get_current_object()
+            
+            # Worker Function
+            def _process_account(acc_id, platform, start_date, cv_def):
+                logs = []
+                try:
+                    with app.app_context():
+                        # Re-calculate missing dates inside thread to ensure isolated logic
+                        if not start_date or start_date > yesterday_date:
+                            return logs
 
-            for acc in accounts:
-                if not acc.start_date: continue
-                
-                # Check Range
-                if acc.start_date > yesterday_date:
-                    continue
-                
-                # Find all dates needed
-                current = acc.start_date
-                needed_dates = []
-                while current <= yesterday_date:
-                    needed_dates.append(current)
-                    current += timedelta(days=1)
-                
-                if not needed_dates: continue
-                
-                range_str = f"{needed_dates[0].strftime('%Y-%m-%d')} ~ {needed_dates[-1].strftime('%Y-%m-%d')}"
-
-                # Query DB for Existing Dates
-                existing_stats = BHDailyStats.query.filter(
-                    BHDailyStats.account_id == acc.account_id,
-                    BHDailyStats.date.in_(needed_dates)
-                ).all()
-                
-                existing_dates_set = {stat.date for stat in existing_stats}
-                
-                # Identify Missing
-                missing_dates = [d for d in needed_dates if d not in existing_dates_set]
-                
-                # Log Status
-                yield f"data: {json.dumps({'msg': f'[{acc.platform}] {acc.account_id} Range: {range_str}'})}\n\n"
-                yield f"data: {json.dumps({'msg': f'  - DB has: {len(existing_dates_set)} days. Missing: {len(missing_dates)} days.'})}\n\n"
-                
-                if not missing_dates:
-                    continue
-                
-                # Backfill
-                for m_date in missing_dates:
-                    target_str = m_date.strftime('%Y-%m-%d')
-                    yield f"data: {json.dumps({'msg': f'  -> Fetching {target_str}...'})}\n\n"
-                    
-                    try:
-                        stats = {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0}
+                        current = start_date
+                        needed_dates = []
+                        # Limit scan range? No, user wants full integrity check.
+                        while current <= yesterday_date:
+                            needed_dates.append(current)
+                            current += timedelta(days=1)
                         
-                        if acc.platform == 'R':
-                            raw_data = r_client.get_report_data([acc.account_id], target_str, target_str)
-                            for item in raw_data: item['user_id'] = acc.account_id
-                            if raw_data:
-                                stats = r_client.process_daily_stats(raw_data, acc.cv_definition)
-                                key = (acc.account_id, target_str)
-                                stats = stats.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                        if not needed_dates: return logs
+                        
+                        # Check DB
+                        existing_stats = BHDailyStats.query.filter(
+                            BHDailyStats.account_id == acc_id,
+                            BHDailyStats.date.in_(needed_dates)
+                        ).all()
+                        existing_dates_set = {stat.date for stat in existing_stats}
+                        missing_dates = sorted([d for d in needed_dates if d not in existing_dates_set])
+
+                        if not missing_dates:
+                            return logs
+
+                        range_str = f"{needed_dates[0].strftime('%Y-%m-%d')} ~ {needed_dates[-1].strftime('%Y-%m-%d')}"
+                        logs.append(f"[{platform}] {acc_id} Missing {len(missing_dates)} days (Range: {range_str})")
+
+                        # --- Platform Specific Logic ---
+                        if platform == 'R':
+                            r_client = RixbeeClient()
+                            
+                            # Group missing dates into continuous chunks of max 7 days
+                            # Logic: Iterate sorted dates, group if contiguous and batch < 7
+                            if missing_dates:
+                                current_batch = [missing_dates[0]]
+                                batches = []
                                 
-                                # Log for R Platform (Intraday)
-                                print(f"[BH-R-Intraday-Sync] Account {acc.account_id} Date {target_str}: {stats}")
-                                print(f"[BH-R-Intraday-Sync-SQL] Account {acc.account_id} Date {target_str} -> Upserted (Spend={stats.get('spend')})")
-                                
-                        elif acc.platform == 'D':
-                            # Fetch Token
-                            d_token_row = BHDAccountToken.query.filter_by(account_id=acc.account_id).first()
+                                for d in missing_dates[1:]:
+                                    last_d = current_batch[-1]
+                                    if (d - last_d).days == 1 and len(current_batch) < 7:
+                                        current_batch.append(d)
+                                    else:
+                                        batches.append(current_batch)
+                                        current_batch = [d]
+                                if current_batch:
+                                    batches.append(current_batch)
+                                    
+                                for batch in batches:
+                                    s_str = batch[0].strftime('%Y-%m-%d')
+                                    e_str = batch[-1].strftime('%Y-%m-%d')
+                                    # logs.append(f"  -> Fetching batch {s_str} to {e_str}...")
+                                    
+                                    try:
+                                        # API Call
+                                        raw_data = r_client.get_report_data([acc_id], s_str, e_str)
+                                        
+                                        # Process Data
+                                        data_by_date = {}
+                                        for item in raw_data:
+                                            item['user_id'] = acc_id
+                                            d_key = item.get('day')
+                                            if d_key:
+                                                if d_key not in data_by_date: data_by_date[d_key] = []
+                                                data_by_date[d_key].append(item)
+                                        
+                                        # Write DB (Upsert 0 if empty)
+                                        for target_date in batch:
+                                            target_str = target_date.strftime('%Y-%m-%d')
+                                            day_items = data_by_date.get(target_str, [])
+                                            
+                                            stats = {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0}
+                                            if day_items:
+                                                # Use existing helper logic if possible, or replicate behavior
+                                                # RClient.process_daily_stats aggregates list
+                                                stats = r_client.process_daily_stats(day_items, cv_def)
+                                                key = (acc_id, target_str)
+                                                stats = stats.get(key, stats)
+                                            
+                                            # Using a local DB session specific upsert might be safer
+                                            # reusing _upsert_stats (it manages its own commit/rollback)
+                                            # BHSyncService is stateless except for logger, safe to use method.
+                                            self._upsert_stats(acc_id, target_str, stats)
+                                            
+                                        logs.append(f"     Batch {s_str}~{e_str} Saved ({len(batch)} days).")
+                                            
+                                    except Exception as e:
+                                        logs.append(f"     Batch {s_str}~{e_str} Failed: {e}")
+
+                        elif platform == 'D':
+                            d_token_row = BHDAccountToken.query.filter_by(account_id=acc_id).first()
                             if not d_token_row:
-                                yield f"data: {json.dumps({'msg': f'     [WARNING] No Token for D-Account {acc.account_id}, skipping...'})}\n\n"
-                                continue
-                            
-                            d_client = DiscoveryClient(d_token_row.token)
-                            # Pass explicit account ID and Intraday Log Tag
-                            d_map = d_client.fetch_daily_stats([str(acc.account_id)], target_str, target_str, log_tag='[BH-D-Intraday-Sync]')
-                            key = (acc.account_id, target_str)
-                            stats = d_map.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
-                            
-                            # Log for D Platform (Intraday)
-                            print(f"[BH-D-Intraday-Sync-SQL] Account {acc.account_id} Date {target_str} -> Upserted (Spend={stats.get('spend')})")
-                        
-                        # Upsert
-                        self._upsert_stats(acc.account_id, target_str, stats)
-                        
-                        yield f"data: {json.dumps({'msg': f'     Got: Spend={stats.get("spend")}, Clicks={stats.get("clicks")}. DB Write OK.'})}\n\n"
-                        
-                    except Exception as e:
-                         yield f"data: {json.dumps({'msg': f'     Failed: {e}', 'type': 'error'})}\n\n"
+                                logs.append(f"     [WARNING] No Token for D-Account {acc_id}")
+                            else:
+                                d_client = DiscoveryClient(d_token_row.token)
+                                # Fetch day by day
+                                for m_date in missing_dates:
+                                    target_str = m_date.strftime('%Y-%m-%d')
+                                    try:
+                                        d_map = d_client.fetch_daily_stats([str(acc_id)], target_str, target_str, log_tag='[BH-D-Intra]')
+                                        key = (acc_id, target_str)
+                                        stats = d_map.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                                        
+                                        self._upsert_stats(acc_id, target_str, stats)
+                                        # logs.append(f"     {target_str} Saved.")
+                                    except Exception as e:
+                                        logs.append(f"     Failed {target_str}: {e}")
+                                logs.append(f"     D-Platform: Processed {len(missing_dates)} days.")
+
+                except Exception as e:
+                    logs.append(f"Error processing {acc_id}: {str(e)}")
+                
+                return logs
+
+            # Execute Parallel Jobs
+            futures = []
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                for acc in accounts:
+                    if not acc.start_date: continue
+                    futures.append(executor.submit(
+                        _process_account, 
+                        acc.account_id, 
+                        acc.platform, 
+                        acc.start_date, 
+                        acc.cv_definition
+                    ))
+                
+                for future in as_completed(futures):
+                    for log in future.result():
+                        yield f"data: {json.dumps({'msg': log})}\n\n"
             
             yield f"data: {json.dumps({'msg': 'Integrity Check Completed.', 'done': True})}\n\n"
 
