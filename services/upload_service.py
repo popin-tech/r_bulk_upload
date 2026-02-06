@@ -11,9 +11,12 @@ import pandas as pd
 # Localization Mappings
 # Note: These are placeholder mappings based on standard practices.
 DEVICE_MAP = {
-    1: "PC",
-    2: "Mobile",
-    5: "Tablet"
+    1: "Mobile",
+    2: "PC",
+    3: "TV",
+    5: "Tablet",
+    6: "loT",
+    7: "TVBox"
 }
 TRAFFIC_MAP = {
     1: "App",
@@ -802,10 +805,9 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
             
             site_obj["type"] = s_type
             site_obj["url"] = str(site_url_raw).strip()
-            audience["site"] = site_obj
+            # audience["site"] = site_obj
             
-        # Request: Force site to [] to avoid API error (ID required) while keeping Excel columns
-        audience["site"] = []
+
 
         # AI語意擴充選項 / AI語意擴充關鍵字 → keywords: { type, value }
         # AI語意擴充選項 should be "1" or "2"
