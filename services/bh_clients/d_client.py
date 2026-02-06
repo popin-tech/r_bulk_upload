@@ -172,19 +172,19 @@ class DiscoveryClient:
                     stats_result[key]['clicks'] += int(day_stat.get('click', 0))
                     stats_result[key]['conversions'] += int(day_stat.get('cv', 0))
 
-        # 2. Parallel Fetch Ads (Max Workers = 10)
+        # 2. Parallel Fetch Ads (Max Workers = 3)
         all_ads = []
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             futures = [executor.submit(_fetch_ads, cam) for cam in campaigns]
             for future in as_completed(futures):
                 result = future.result()
                 if result:
                     all_ads.extend(result)
         
-        # 3. Parallel Fetch Reports (Max Workers = 10)
+        # 3. Parallel Fetch Reports (Max Workers = 3)
         # Note: all_ads now contains ads from ALL campaigns managed by this token
         if all_ads:
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            with ThreadPoolExecutor(max_workers=3) as executor:
                 futures = [executor.submit(_fetch_report, ad) for ad in all_ads]
                 # Wait for all to complete
                 for future in as_completed(futures):
