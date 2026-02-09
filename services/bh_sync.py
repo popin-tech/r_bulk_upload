@@ -58,7 +58,9 @@ class BHSyncService:
                     try:
                         yield f"data: {json.dumps({'msg': f'  Fetching batch {i+1}-{min(i+batch_size, len(r_accounts))}...'})}\n\n"
                         # Fetch Data
-                        raw_data = r_client.get_report_data(acc_ids, target_date, target_date)
+                        # Pass agent_id (Since batch_size=1, we can use batch[0].agent)
+                        agent_id = batch[0].agent
+                        raw_data = r_client.get_report_data(acc_ids, target_date, target_date, agent_id=agent_id)
                         
                         # INJECT user_id because API doesn't return it
                         # Since batch_size=1, we know these items belong to acc_ids[0]
@@ -237,7 +239,7 @@ class BHSyncService:
             app = current_app._get_current_object()
             
             # Worker Function
-            def _process_account(acc_id, platform, start_date, cv_def):
+            def _process_account(acc_id, platform, start_date, cv_def, agent_id=None):
                 logs = []
                 try:
                     with app.app_context():
@@ -304,7 +306,7 @@ class BHSyncService:
                                     
                                     try:
                                         # API Call
-                                        raw_data = r_client.get_report_data([acc_id], s_str, e_str)
+                                        raw_data = r_client.get_report_data([acc_id], s_str, e_str, agent_id=agent_id)
                                         
                                         # Process Data
                                         data_by_date = {}
@@ -324,9 +326,24 @@ class BHSyncService:
                                             if day_items:
                                                 # Use existing helper logic if possible, or replicate behavior
                                                 # RClient.process_daily_stats aggregates list
-                                                stats = r_client.process_daily_stats(day_items, cv_def)
-                                                key = (acc_id, target_str)
-                                                stats = stats.get(key, stats)
+                                                batch_stats = r_client.process_daily_stats(day_items, cv_def)
+                                                
+                                                # Log keys for debug
+                                                if str(acc_id) == '9573':
+                                                    print(f"[DEBUG 9573] Keys in batch_stats: {list(batch_stats.keys())}", flush=True)
+                                                    print(f"[DEBUG 9573] Looking for key: {(acc_id, target_str)}", flush=True)
+                                                    # Try string key too
+                                                    print(f"[DEBUG 9573] Looking for str key: {(str(acc_id), target_str)}", flush=True)
+                                                    
+                                                # Try both str and int keys
+                                                key = (str(acc_id), target_str)
+                                                if key not in batch_stats:
+                                                    key = (int(acc_id) if str(acc_id).isdigit() else acc_id, target_str)
+                                                    
+                                                stats = batch_stats.get(key, stats)
+                                                
+                                                if str(acc_id) == '9573':
+                                                    print(f"[DEBUG 9573] Final stats for {target_str}: {stats}", flush=True)
                                             
                                             self._upsert_stats(acc_id, target_str, stats)
                                             
@@ -377,7 +394,8 @@ class BHSyncService:
                         acc.account_id, 
                         acc.platform, 
                         acc.start_date, 
-                        acc.cv_definition
+                        acc.cv_definition,
+                        acc.agent
                     ))
                 
                 for future in as_completed(futures):

@@ -646,7 +646,6 @@ if app.config.get("ENABLE_FRONTEND", False):
                         if msg_text:
                             print(f"[CRON-LOG] {msg_text}", flush=True)
                             logs.append(msg_text)
-                        logs.append(data.get('msg', ''))
                     except: pass
             
             elapsed = time.time() - start_time

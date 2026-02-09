@@ -336,7 +336,7 @@
                         <div class="modal-header border-secondary">
                             <h5 class="modal-title">Sync Progress</h5>
                         </div>
-                        <div class="modal-body bg-black font-monospace p-3"
+                        <div class="modal-body bg-black font-monospace p-3" id="sync-console"
                             style="max-height: 400px; overflow-y: auto; font-size: 12px;">
                             <div v-for="(log, idx) in syncLogs" :key="idx" class="mb-1"
                                 :class="{'text-danger': log.type==='error', 'text-success': log.done}">
