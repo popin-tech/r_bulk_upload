@@ -245,6 +245,12 @@ class BHSyncService:
                         if not start_date or start_date > yesterday_date:
                             return logs
 
+                        # Ensure start_date is reasonable (prevent 1970-01-01 fetching)
+                        SAFE_START_DATE = date(2024, 1, 1)
+                        if start_date < SAFE_START_DATE:
+                            # print(f"[Worker-Log] Adjusting start_date from {start_date} to {SAFE_START_DATE}", flush=True)
+                            start_date = SAFE_START_DATE
+
                         current = start_date
                         needed_dates = []
                         # Limit scan range? No, user wants full integrity check.
