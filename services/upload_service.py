@@ -185,12 +185,9 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
         # Normalization for full-width characters (e.g. ２０２４－０１－０１)
         s = unicodedata.normalize('NFKC', s)
         
-        # Try multiple formats
+        # Try multiple formats (DATE ONLY)
         formats = [
-            "%Y-%m-%d %H",   # Standard: 2024-01-01 10
-            "%Y/%m/%d %H",   # Slash: 2024/01/01 10
-            "%Y.%m.%d %H",   # Dot: 2024.01.01 10
-            "%Y-%m-%d",      # Date only: 2024-01-01 (default 00:00)
+            "%Y-%m-%d",      # Date only: 2024-01-01
             "%Y/%m/%d",      # Date only slash
             "%Y.%m.%d"       # Date only dot
         ]
@@ -202,7 +199,7 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
             except ValueError:
                 continue
 
-    # 成功解析後，進行時區扣減 (UTC+8 -> UTC)
+    # 成功解析後
     if parsed_dt:
         # Check date range: +/- 180 days
         now = datetime.now()
@@ -219,9 +216,8 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
                 f"Row {excel_row_num}: 欄位「{field}」日期不能超過半年前 ({past_limit.strftime('%Y-%m-%d')})。"
             )
 
-        # Subtract 8 hours
-        final_dt = parsed_dt - timedelta(hours=8)
-        return final_dt.strftime("%Y-%m-%d %H")
+        # Return Date Only String (No Timezone Shift)
+        return parsed_dt.strftime("%Y-%m-%d")
 
     # 都不符合 → 拋錯
     raise UploadParsingError(
