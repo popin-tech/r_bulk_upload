@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
 
 
+import unicodedata
 import pandas as pd
 
 
@@ -180,24 +181,27 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
     if isinstance(value, (datetime, pd.Timestamp)):
         parsed_dt = value
     else:
-        s = value.strip()
-        # 正規 YYYY-MM-DD HH
-        try:
-            parsed_dt = datetime.strptime(s, "%Y-%m-%d %H")
-        except Exception:
-            pass
+        s = str(value).strip()
+        # Normalization for full-width characters (e.g. ２０２４－０１－０１)
+        s = unicodedata.normalize('NFKC', s)
+        
+        # Try multiple formats
+        formats = [
+            "%Y-%m-%d %H",   # Standard: 2024-01-01 10
+            "%Y/%m/%d %H",   # Slash: 2024/01/01 10
+            "%Y.%m.%d %H",   # Dot: 2024.01.01 10
+            "%Y-%m-%d",      # Date only: 2024-01-01 (default 00:00)
+            "%Y/%m/%d",      # Date only slash
+            "%Y.%m.%d"       # Date only dot
+        ]
+        
+        for fmt in formats:
+            try:
+                parsed_dt = datetime.strptime(s, fmt)
+                break
+            except ValueError:
+                continue
 
-        if parsed_dt is None:
-            # 若使用者輸入 yyyy/mm/dd hh, yyyy.mm.dd hh 也自動修正
-            for sep in ["/", "."]:
-                if sep in s:
-                    s_fixed = s.replace(sep, "-")
-                    try:
-                        parsed_dt = datetime.strptime(s_fixed, "%Y-%m-%d %H")
-                        break
-                    except Exception:
-                        pass
-    
     # 成功解析後，進行時區扣減 (UTC+8 -> UTC)
     if parsed_dt:
         # Check date range: +/- 180 days
