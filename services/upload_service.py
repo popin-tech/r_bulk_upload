@@ -200,6 +200,14 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
     
     # 成功解析後，進行時區扣減 (UTC+8 -> UTC)
     if parsed_dt:
+        # Check if date is too far in the future (> 180 days)
+        # Using parsed_dt (input time) for check
+        limit_dt = datetime.now() + timedelta(days=180)
+        if parsed_dt > limit_dt:
+            raise UploadParsingError(
+                f"Row {excel_row_num}: 欄位「{field}」日期不能超過半年後 ({limit_dt.strftime('%Y-%m-%d')})。"
+            )
+
         # Subtract 8 hours
         final_dt = parsed_dt - timedelta(hours=8)
         return final_dt.strftime("%Y-%m-%d %H")
@@ -621,19 +629,17 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
         start_date_raw = row.get("開始日期")
         end_date_raw = row.get("結束日期")
 
-        if start_date_raw:
-            if pd.isna(start_date_raw) or str(start_date_raw).strip() == "":
-                schedule["start_date"] = ""
-            else:
-                start_date = _validate_datetime_format(str(start_date_raw), excel_row_num, "開始日期")
-                schedule["start_date"] = start_date
+        if not start_date_raw or pd.isna(start_date_raw) or str(start_date_raw).strip() == "":
+            raise UploadParsingError(f"Row {excel_row_num}: 「開始日期」為必填欄位。")
+        else:
+            start_date = _validate_datetime_format(str(start_date_raw), excel_row_num, "開始日期")
+            schedule["start_date"] = start_date
 
-        if end_date_raw:
-            if pd.isna(end_date_raw) or str(end_date_raw).strip() == "":
-                schedule["end_date"] = ""
-            else:
-                end_date = _validate_datetime_format(str(end_date_raw), excel_row_num, "結束日期")
-                schedule["end_date"] = end_date
+        if not end_date_raw or pd.isna(end_date_raw) or str(end_date_raw).strip() == "":
+            raise UploadParsingError(f"Row {excel_row_num}: 「結束日期」為必填欄位。")
+        else:
+            end_date = _validate_datetime_format(str(end_date_raw), excel_row_num, "結束日期")
+            schedule["end_date"] = end_date
 
         # 投放星期數 → week_days
         week_days_raw = row.get("投放星期數")
