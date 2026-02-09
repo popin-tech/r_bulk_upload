@@ -200,12 +200,19 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
     
     # 成功解析後，進行時區扣減 (UTC+8 -> UTC)
     if parsed_dt:
-        # Check if date is too far in the future (> 180 days)
-        # Using parsed_dt (input time) for check
-        limit_dt = datetime.now() + timedelta(days=180)
-        if parsed_dt > limit_dt:
+        # Check date range: +/- 180 days
+        now = datetime.now()
+        future_limit = now + timedelta(days=180)
+        past_limit = now - timedelta(days=180)
+        
+        if parsed_dt > future_limit:
             raise UploadParsingError(
-                f"Row {excel_row_num}: 欄位「{field}」日期不能超過半年後 ({limit_dt.strftime('%Y-%m-%d')})。"
+                f"Row {excel_row_num}: 欄位「{field}」日期不能超過半年後 ({future_limit.strftime('%Y-%m-%d')})。"
+            )
+            
+        if parsed_dt < past_limit:
+            raise UploadParsingError(
+                f"Row {excel_row_num}: 欄位「{field}」日期不能超過半年前 ({past_limit.strftime('%Y-%m-%d')})。"
             )
 
         # Subtract 8 hours
