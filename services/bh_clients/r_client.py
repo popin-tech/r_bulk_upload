@@ -1,5 +1,6 @@
 import requests
 import time
+import json
 from datetime import datetime, timedelta
 import logging
 
@@ -18,12 +19,21 @@ class RixbeeClient:
     def __init__(self):
         pass
 
-    def get_report_data(self, account_ids: list[str], start_date: str, end_date: str) -> list[dict]:
+    def get_report_data(self, account_ids: list[str], start_date: str, end_date: str, agent_id: int = None) -> list[dict]:
         """
         Fetch daily report for given accounts.
         Implements failover: Default -> Direct.
+        If agent_id is provided (7168/7161), forces that token.
         """
-        # Try Default Token first
+        # Strict Token Selection based on Agent
+        if agent_id == 7168:
+            # 4A -> Direct
+            return self._fetch_with_token('direct', account_ids, start_date, end_date)
+        elif agent_id == 7161:
+            # 台客 -> Default
+            return self._fetch_with_token('default', account_ids, start_date, end_date)
+
+        # Legacy / Fallback: Try Default Token first
         try:
             return self._fetch_with_token('default', account_ids, start_date, end_date)
         except Exception as e:
@@ -95,10 +105,16 @@ class RixbeeClient:
         # print(f"--- R API RESPONSE ({response.status_code}) ---")
 
         
+        if '9573' in account_ids or 9573 in account_ids:
+            print(f"[DEBUG 9573 RClient] Request URL: {response.url}", flush=True)
+        
         if response.status_code != 200:
             raise Exception(f"API Error {response.status_code}: {response.text}")
 
         res_json = response.json()
+        
+        if '9573' in account_ids or 9573 in account_ids:
+             print(f"[DEBUG 9573 RClient] Raw Response: {json.dumps(res_json, ensure_ascii=False)}", flush=True)
         
         # Check 'status' in body
         # PHP: if($resAry['status']['code'] != 0)

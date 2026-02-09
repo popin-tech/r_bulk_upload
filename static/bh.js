@@ -180,18 +180,11 @@ const app = createApp({
             isSyncing.value = true;
             syncLogs.value = [];
 
-            // Show Modal using Bootstrap
-            const modalEl = document.getElementById('syncModal');
-            if (modalEl) {
-                syncModalInstance.value = new bootstrap.Modal(modalEl, {
-                    backdrop: 'static',
-                    keyboard: false
-                });
-                syncModalInstance.value.show();
-            }
-
             // Connect SSE
             const eventSource = new EventSource('/api/bh/sync');
+
+            // Prevent background scrolling
+            document.body.style.overflow = 'hidden';
 
             eventSource.onmessage = (event) => {
                 try {
@@ -200,7 +193,7 @@ const app = createApp({
 
                     // Auto-scroll scroll to bottom
                     nextTick(() => {
-                        const term = document.getElementById('sync-terminal');
+                        const term = document.getElementById('sync-console');
                         if (term) term.scrollTop = term.scrollHeight;
                     });
 
@@ -209,7 +202,6 @@ const app = createApp({
                         isSyncing.value = false;
                         // Refresh data
                         loadAccounts();
-
                     }
                     if (data.type === 'error') {
                         // Don't close immediately, let user see error
@@ -220,6 +212,7 @@ const app = createApp({
             };
 
             eventSource.onerror = (e) => {
+                // ... error handling ...
                 console.error('SSE Error', e);
                 eventSource.close();
                 isSyncing.value = false;
@@ -228,9 +221,9 @@ const app = createApp({
         };
 
         const closeSyncModal = () => {
-            if (syncModalInstance.value) {
-                syncModalInstance.value.hide();
-            }
+            syncLogs.value = [];
+            isSyncing.value = false;
+            document.body.style.overflow = '';
         };
 
         const getProgressColor = (percent) => {
