@@ -109,8 +109,8 @@ class BHSyncService:
                             self._upsert_stats(acc.account_id, target_date, stats)
                             
                             # Log for R Platform
-                            print(f"[BH-R-Daily-Sync] Account {acc.account_id} Date {target_date}: {stats}")
-                            print(f"[BH-R-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})")
+                            print(f"[BH-R-Daily-Sync] Account {acc.account_id} Date {target_date}: {stats}", flush=True)
+                            print(f"[BH-R-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})", flush=True)
                             
                             # Detailed Log for SSE
                             log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={stats.get('spend',0)}, Clicks={stats.get('clicks',0)}"
@@ -172,7 +172,7 @@ class BHSyncService:
                             self._upsert_stats(acc.account_id, target_date, stats)
                             
                             # Log for D Platform
-                            print(f"[BH-D-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})")
+                            print(f"[BH-D-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})", flush=True)
                             
                             # Detailed Log
                             log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={stats.get('spend',0)}, Clicks={stats.get('clicks',0)}"

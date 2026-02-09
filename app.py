@@ -609,8 +609,10 @@ if app.config.get("ENABLE_FRONTEND", False):
                     try:
                         json_str = msg.replace("data: ", "").strip()
                         data = json.loads(json_str)
-                        logs.append(data.get('msg', ''))
-                        logs.append(data.get('msg', ''))
+                        msg_text = data.get('msg', '')
+                        if msg_text:
+                            print(f"[CRON-LOG] {msg_text}", flush=True)
+                            logs.append(msg_text)
                     except: pass
 
             elapsed = time.time() - start_time
