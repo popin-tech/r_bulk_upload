@@ -72,6 +72,7 @@ class RixbeeClient:
         # But for BH, we only store account-day summaries. 
         # Aggregating locally is fine.
         params.append(('dimensions[]', 'day'))
+        params.append(('dimensions[]', 'user_id')) # Ensure user_id is returned in data
         
         # Add headers (none needed if auth is in params)
         headers = {}
