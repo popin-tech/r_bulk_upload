@@ -1,6 +1,6 @@
 import time
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from database import db, BHAccount, BHDailyStats, BHDAccountToken
 from services.bh_clients.r_client import RixbeeClient
 from services.bh_clients.d_client import DiscoveryClient
