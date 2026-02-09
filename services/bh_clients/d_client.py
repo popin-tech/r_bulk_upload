@@ -200,6 +200,6 @@ class DiscoveryClient:
         for acc_id, dates in acc_keys.items():
             for d in dates:
                 key = (acc_id, d)
-                print(f"{log_tag} Account {acc_id} Date {d}: {stats_result[key]}")
+                print(f"{log_tag} Account {acc_id} Date {d}: {stats_result[key]}", flush=True)
 
         return stats_result

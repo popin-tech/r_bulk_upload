@@ -109,8 +109,8 @@ class BHSyncService:
                             self._upsert_stats(acc.account_id, target_date, stats)
                             
                             # Log for R Platform
-                            print(f"[BH-R-Daily-Sync] Account {acc.account_id} Date {target_date}: {stats}")
-                            print(f"[BH-R-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})")
+                            print(f"[BH-R-Daily-Sync] Account {acc.account_id} Date {target_date}: {stats}", flush=True)
+                            print(f"[BH-R-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})", flush=True)
                             
                             # Detailed Log for SSE
                             log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={stats.get('spend',0)}, Clicks={stats.get('clicks',0)}"
@@ -172,7 +172,7 @@ class BHSyncService:
                             self._upsert_stats(acc.account_id, target_date, stats)
                             
                             # Log for D Platform
-                            print(f"[BH-D-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})")
+                            print(f"[BH-D-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})", flush=True)
                             
                             # Detailed Log
                             log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={stats.get('spend',0)}, Clicks={stats.get('clicks',0)}"
@@ -266,7 +266,9 @@ class BHSyncService:
                             return logs
 
                         range_str = f"{needed_dates[0].strftime('%Y-%m-%d')} ~ {needed_dates[-1].strftime('%Y-%m-%d')}"
-                        logs.append(f"[{platform}] {acc_id} Missing {len(missing_dates)} days (Range: {range_str})")
+                        log_msg = f"[{platform}] {acc_id} Missing {len(missing_dates)} days (Range: {range_str})"
+                        logs.append(log_msg)
+                        print(f"[Worker-Log] {log_msg}", flush=True)
 
                         # --- Platform Specific Logic ---
                         if platform == 'R':
@@ -292,6 +294,7 @@ class BHSyncService:
                                     s_str = batch[0].strftime('%Y-%m-%d')
                                     e_str = batch[-1].strftime('%Y-%m-%d')
                                     # logs.append(f"  -> Fetching batch {s_str} to {e_str}...")
+                                    print(f"[Worker-Log]   -> R-Batch Fetching {s_str} ~ {e_str}...", flush=True)
                                     
                                     try:
                                         # API Call
@@ -319,15 +322,15 @@ class BHSyncService:
                                                 key = (acc_id, target_str)
                                                 stats = stats.get(key, stats)
                                             
-                                            # Using a local DB session specific upsert might be safer
-                                            # reusing _upsert_stats (it manages its own commit/rollback)
-                                            # BHSyncService is stateless except for logger, safe to use method.
                                             self._upsert_stats(acc_id, target_str, stats)
                                             
                                         logs.append(f"     Batch {s_str}~{e_str} Saved ({len(batch)} days).")
+                                        print(f"[Worker-Log]   -> R-Batch {s_str}~{e_str} Saved.", flush=True)
                                             
                                     except Exception as e:
-                                        logs.append(f"     Batch {s_str}~{e_str} Failed: {e}")
+                                        err_msg = f"     Batch {s_str}~{e_str} Failed: {e}"
+                                        logs.append(err_msg)
+                                        print(f"[Worker-Log] {err_msg}", flush=True)
 
                         elif platform == 'D':
                             d_token_row = BHDAccountToken.query.filter_by(account_id=acc_id).first()
@@ -338,16 +341,20 @@ class BHSyncService:
                                 # Fetch day by day
                                 for m_date in missing_dates:
                                     target_str = m_date.strftime('%Y-%m-%d')
+                                    print(f"[Worker-Log]   -> D-Fetch {acc_id} Date {target_str}...", flush=True)
                                     try:
                                         d_map = d_client.fetch_daily_stats([str(acc_id)], target_str, target_str, log_tag='[BH-D-Intra]')
                                         key = (acc_id, target_str)
                                         stats = d_map.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
                                         
                                         self._upsert_stats(acc_id, target_str, stats)
-                                        # logs.append(f"     {target_str} Saved.")
+                                        
                                     except Exception as e:
                                         logs.append(f"     Failed {target_str}: {e}")
+                                        print(f"[Worker-Log]   -> D-Fetch Details {target_str} Failed: {e}", flush=True)
+                                        
                                 logs.append(f"     D-Platform: Processed {len(missing_dates)} days.")
+                                print(f"[Worker-Log]   -> D-Platform {acc_id} Finished.", flush=True)
 
                 except Exception as e:
                     logs.append(f"Error processing {acc_id}: {str(e)}")
