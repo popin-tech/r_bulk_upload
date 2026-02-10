@@ -105,16 +105,12 @@ class RixbeeClient:
         # print(f"--- R API RESPONSE ({response.status_code}) ---")
 
         
-        if '9573' in account_ids or 9573 in account_ids:
-            print(f"[DEBUG 9573 RClient] Request URL: {response.url}", flush=True)
+
         
         if response.status_code != 200:
             raise Exception(f"API Error {response.status_code}: {response.text}")
 
         res_json = response.json()
-        
-        if '9573' in account_ids or 9573 in account_ids:
-             print(f"[DEBUG 9573 RClient] Raw Response: {json.dumps(res_json, ensure_ascii=False)}", flush=True)
         
         # Check 'status' in body
         # PHP: if($resAry['status']['code'] != 0)

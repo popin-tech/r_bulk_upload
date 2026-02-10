@@ -23,6 +23,9 @@
     <script src="https://accounts.google.com/gsi/client" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script>
+        window.currentUserEmail = "{{ session.get('user', {}).get('email', '') }}";
+    </script>
 </head>
 
 <body>
@@ -189,16 +192,23 @@
                         <tr v-if="accounts.length === 0 && !loading">
                             <td colspan="8" class="text-center py-5">No accounts found. Upload some!</td>
                         </tr>
-                        <tr v-for="acc in accounts" :key="acc.id" @click="openDrawer(acc)" style="cursor: pointer;">
+                        <tr v-for="acc in accounts" :key="acc.id" :id="'row-' + acc.id" @click="openDrawer(acc)"
+                            style="cursor: pointer;">
                             <td class="text-center" @click.stop>
                                 <input type="checkbox" class="form-check-input"
                                     :checked="selectedAccountIds.includes(acc.account_id)"
                                     @change="toggleSelection(acc.account_id)">
                             </td>
                             <td>
-                                <span class="badge" style="background: transparent; border: 1px solid white;">
-                                    [[ acc.platform ]]
-                                </span>
+                                <div class="d-flex flex-column align-items-center">
+                                    <span class="badge mb-1" style="background: transparent; border: 1px solid white;">
+                                        [[ acc.platform ]]
+                                    </span>
+                                    <span v-if="acc.platform === 'R' && acc.agent" class="badge"
+                                        style="background: transparent; font-size: 10px; padding: 2px 4px;">
+                                        [[ getAgentName(acc.agent) ]]
+                                    </span>
+                                </div>
                             </td>
                             <td>[[ acc.account_id ]]</td>
                             <td>[[ acc.account_name || '-' ]]</td>
@@ -259,7 +269,9 @@
                 <div class="bh-drawer" :class="{ show: isDrawerOpen }">
                     <div v-if="selectedAccount" class="d-flex flex-column h-100">
                         <div class="bh-drawer-header">
-                            <h5 class="m-0 text-white">[[ selectedAccount.account_name || selectedAccount.account_id ]]
+                            <h5 class="m-0 text-white">
+                                [[ selectedAccount.platform ]] [[ selectedAccount.account_id ]] [[
+                                selectedAccount.account_name ]]
                             </h5>
                             <button class="btn btn-link text-white p-0" @click="closeDrawer">
                                 <i class="fas fa-times"></i>
@@ -287,10 +299,50 @@
                                             v-model="selectedAccount.end_date" @click="$event.target.showPicker()">
                                     </div>
                                 </div>
+                                <div class="row mb-3">
+                                    <div class="col-6">
+                                        <label class="form-label text-white small">CPC Goal</label>
+                                        <input type="number" class="form-control glass-input"
+                                            v-model.number="selectedAccount.cpc_goal" step="0.1">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label text-white small">CPA Goal</label>
+                                        <input type="number" class="form-control glass-input"
+                                            v-model.number="selectedAccount.cpa_goal" step="1">
+                                    </div>
+                                </div>
                                 <!-- Save Button -->
-                                <button class="btn btn-primary w-100" @click="saveAccount">
+                                <button class="btn btn-primary w-100 mb-3" @click="saveAccount">
                                     <i class="fas fa-save me-2"></i> Update Settings
                                 </button>
+
+                                <!-- Admin Full Sync Button -->
+                                <button v-if="userEmail === 'benson@popin.cc'" class="btn btn-warning w-100"
+                                    @click="triggerAccountSync" :disabled="isSyncing">
+                                    <i class="fas fa-sync me-2" :class="{'fa-spin': isSyncing}"></i>
+                                    ADMIN: Resync All Data
+                                </button>
+
+                                <!-- Sync Progress Log (In Drawer) -->
+                                <div v-if="syncLogs.length > 0 || isSyncing"
+                                    class="mt-3 p-2 bg-black border border-secondary rounded font-monospace"
+                                    style="max-height: 300px; overflow-y: auto; font-size: 11px;">
+                                    <div
+                                        class="d-flex justify-content-between align-items-center mb-2 sticky-top bg-black border-bottom border-secondary pb-1">
+                                        <span class="text-white small fw-bold">Sync Progress</span>
+                                        <button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                            @click="closeSyncModal" style="font-size: 10px;">
+                                            [[ isSyncing ? 'Stop' : 'Clear' ]]
+                                        </button>
+                                    </div>
+                                    <div v-for="(log, idx) in syncLogs" :key="idx" class="mb-1"
+                                        :class="{'text-danger': log.type==='error', 'text-success': log.done}">
+                                        <span class="text-secondary">>></span> [[ log.msg ]]
+                                    </div>
+                                    <div v-if="isSyncing" class="text-white-50 mt-2">
+                                        <i class="fas fa-spinner fa-spin me-2"></i> Processing...
+                                    </div>
+                                </div>
                             </div>
 
                             <hr class="border-secondary my-4">
@@ -327,32 +379,6 @@
                     </div>
                 </div>
             </teleport>
-
-            <!-- Sync Log Modal -->
-            <div class="modal fade show" tabindex="-1" style="display: block; background: rgba(0,0,0,0.8);"
-                v-if="syncLogs.length > 0 || isSyncing">
-                <div class="modal-dialog modal-dialog-centered modal-lg">
-                    <div class="modal-content bg-dark text-white border-secondary shadow-lg">
-                        <div class="modal-header border-secondary">
-                            <h5 class="modal-title">Sync Progress</h5>
-                        </div>
-                        <div class="modal-body bg-black font-monospace p-3" id="sync-console"
-                            style="max-height: 400px; overflow-y: auto; font-size: 12px;">
-                            <div v-for="(log, idx) in syncLogs" :key="idx" class="mb-1"
-                                :class="{'text-danger': log.type==='error', 'text-success': log.done}">
-                                <span class="text-secondary">>></span> [[ log.msg ]]
-                            </div>
-                            <div v-if="isSyncing" class="text-white-50 mt-2">
-                                <i class="fas fa-spinner fa-spin me-2"></i> Processing...
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer border-secondary">
-                        <button type="button" class="btn btn-secondary" @click="closeSyncModal"
-                            :disabled="isSyncing">Close</button>
-                    </div>
-                </div>
-            </div>
         </div>
     </main>
 
