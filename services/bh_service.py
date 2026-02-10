@@ -142,9 +142,20 @@ class BHService:
                         token_val = str(row['token']).strip()
                         
                     if token_val:
-                        # Check if exists (User Rule: "有這個帳戶的token 就不動作，沒有就insert")
+                        # Check if exists (User Rule: "有這個帳戶的token 就不動作，沒有就insert" -> User ORIGINALLY said this??)
+                        # Wait, User said "欄位 d token 目前有正常更新資料庫嗎？幫我確認"
+                        # This implies they WANT it to update.
+                        # My previous implementation was "insert only" based on some assumption or previous prompt.
+                        # I will change it to UPSERT (Update if exists).
+                        
                         existing_token = BHDAccountToken.query.filter_by(account_id=acc_id).first()
-                        if not existing_token:
+                        if existing_token:
+                            # Update if changed
+                            if existing_token.token != token_val:
+                                existing_token.token = token_val
+                                existing_token.updated_at = datetime.utcnow()
+                                print(f"[BHService] Updated Token for D-Account {acc_id}")
+                        else:
                             # Insert
                             new_token = BHDAccountToken(
                                 account_id=acc_id,
@@ -242,6 +253,14 @@ class BHService:
         
         y_map = {r.account_id: float(r.spend or 0) for r in y_stats}
 
+        # 3. Fetch D-Tokens (Optimized)
+        # Only for D accounts? Or all? fetching all is easier if list is small.
+        # Filter where account_id in acct_ids
+        tokens = BHDAccountToken.query.filter(
+            BHDAccountToken.account_id.in_(acct_ids)
+        ).all()
+        token_map = {t.account_id: t.token for t in tokens}
+
         results = []
         today = datetime.utcnow().date() 
 
@@ -250,6 +269,10 @@ class BHService:
             
             # Match via PK ID
             s = stats_map.get(acc.id, {'spend': 0, 'cv': 0, 'clicks': 0})
+            
+            # Attach Token if D platform (or always, frontend can filter)
+            if acc.platform == 'D':
+                data['d_token'] = token_map.get(acc.account_id)
             
             # Yesterday Spend: Only valid if yesterday covers this account's period
             # Or at least check reasonable bounds if strictly required. 
@@ -424,7 +447,7 @@ class BHService:
         db.session.commit()
         return True
 
-    def update_accounts_status(self, account_ids: list[str], status: str) -> int:
+    def update_accounts_status(self, account_ids: list[int], status: str) -> int:
         """
         Bulk update account status.
         Returns number of rows updated.
@@ -441,7 +464,7 @@ class BHService:
             # synchronize_session=False is faster for bulk updates but session objects might be stale 
             # (usually fine for this use case as we reload after)
             updated_count = BHAccount.query.filter(
-                BHAccount.account_id.in_(account_ids)
+                BHAccount.id.in_(account_ids)
             ).update({BHAccount.status: status}, synchronize_session=False)
             
             db.session.commit()

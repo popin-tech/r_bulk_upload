@@ -60,6 +60,7 @@ class DiscoveryClient:
         params = {'country_id': 'tw'}
         
         resp = requests.get(self.CAMPAIGN_LIST_URL, headers=headers, params=params, timeout=30)
+ 
         if resp.status_code != 200:
             logger.error(f"Failed to fetch campaigns: {resp.text}")
             print(f"Failed to fetch campaigns: {resp.text}")
@@ -105,6 +106,7 @@ class DiscoveryClient:
             ad_list_url = self.AD_LIST_BASE_URL.format(cam_id)
             try:
                 ad_resp = requests.get(ad_list_url, headers=headers, timeout=20)
+
                 if ad_resp.status_code != 200:
                     return []
                 ads = ad_resp.json().get('data', [])
@@ -139,6 +141,7 @@ class DiscoveryClient:
                     rep_resp = requests.get(report_url, headers=headers, timeout=20)
                     if rep_resp.status_code == 200:
                         r_json = rep_resp.json()
+
                         if r_json.get('code') == 1 and 'operateTooMuch' in r_json.get('msg', ''):
                             print("    Rate limit hit, sleeping 1s...")
                             time.sleep(1)

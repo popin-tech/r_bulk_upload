@@ -328,7 +328,7 @@ const app = createApp({
             if (isAllSelected.value) {
                 selectedAccountIds.value = [];
             } else {
-                selectedAccountIds.value = accounts.value.map(a => a.account_id);
+                selectedAccountIds.value = accounts.value.map(a => a.id);
             }
         };
 
