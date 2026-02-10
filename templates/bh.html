@@ -135,7 +135,7 @@
             <div class="d-flex justify-content-between align-items-center mb-3" style="min-height: 41px;">
                 <!-- Left: Download -->
                 <div>
-                    <button class="btn btn-primary btn-sm" @click="triggerDownload">
+                    <button class="action-btn" @click="triggerDownload">
                         <i class="fas fa-download me-2"></i>Download
                     </button>
                 </div>
@@ -196,7 +196,7 @@
                                     @change="toggleSelection(acc.account_id)">
                             </td>
                             <td>
-                                <span class="badge" :class="acc.platform === 'R' ? 'bg-primary' : 'bg-info'">
+                                <span class="badge" style="background: transparent; border: 1px solid white;">
                                     [[ acc.platform ]]
                                 </span>
                             </td>
@@ -218,7 +218,7 @@
                             <!-- Total Spend -->
                             <td>
                                 <div class="d-flex flex-column">
-                                    <span class="table-num-lg" :class="getProgressColor(acc.budget_percent)">
+                                    <span class="table-num-lg">
                                         [[ formatNumber(acc.total_spend) ]]
                                     </span>
                                     <span class="text-white-50" style="font-size: 13px;">/ [[ formatNumber(acc.budget)
@@ -227,7 +227,7 @@
                             </td>
 
                             <td>
-                                <div class="d-flex flex-column" style="font-size: 12px; line-height: 1.2;">
+                                <div class="d-flex flex-column" style="font-size: 15px; line-height: 1.2;">
                                     <span>[[ formatDate(acc.start_date) ]] ~ [[ formatDate(acc.end_date) ]]</span>
                                     <span class="text-white-50 small">[[ acc.remaining_days ]] days left</span>
                                 </div>

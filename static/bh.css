@@ -61,8 +61,8 @@ body {
     color: #fff;
     padding: 16px 12px;
     vertical-align: middle;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-top: 1px solid rgba(255, 255, 255, 1);
+    border-bottom: 1px solid rgba(255, 255, 255, 1);
 }
 
 .bh-table tr td:first-child {

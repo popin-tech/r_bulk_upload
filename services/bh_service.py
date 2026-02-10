@@ -133,7 +133,10 @@ class BHService:
                 # --- D Platform Token Logic ---
                 if platform == 'D':
                     token_val = None
-                    if 'Token' in row and pd.notna(row['Token']):
+                    # Prioritize 'D Token', then fallback to 'Token' / 'token'
+                    if 'D Token' in row and pd.notna(row['D Token']):
+                         token_val = str(row['D Token']).strip()
+                    elif 'Token' in row and pd.notna(row['Token']):
                         token_val = str(row['Token']).strip()
                     elif 'token' in row and pd.notna(row['token']):
                         token_val = str(row['token']).strip()
