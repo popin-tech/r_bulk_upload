@@ -229,7 +229,7 @@ const app = createApp({
         const getProgressColor = (percent) => {
             if (percent < 95) return 'text-custom-red';
             if (percent < 100) return 'text-custom-orange';
-            return 'text-custom-green';
+            return ''; // 100% or more -> default white
         };
 
         const triggerDownload = async () => {
