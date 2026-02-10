@@ -211,10 +211,11 @@ class BHService:
         
         # 1. Total Stats (Filtered by Date Range)
         # Fix: Only sum stats that are within the Account's Start/End Date
+        # Group by BHAccount.id (Unique PK) instead of account_id string to Separate overlapping/same-id accounts
         account_primary_ids = [a.id for a in accounts]
         
         total_stats = db.session.query(
-            BHDailyStats.account_id,
+            BHAccount.id,
             func.sum(BHDailyStats.spend).label('total_spend'),
             func.sum(BHDailyStats.conversions).label('total_cv'),
             func.sum(BHDailyStats.clicks).label('total_clicks')
@@ -224,16 +225,12 @@ class BHService:
             BHAccount.id.in_(account_primary_ids),
             BHDailyStats.date >= BHAccount.start_date,
             BHDailyStats.date <= BHAccount.end_date
-        ).group_by(BHDailyStats.account_id).all()
+        ).group_by(BHAccount.id).all()
         
-        stats_map = {r.account_id: {'spend': float(r.total_spend or 0), 'cv': int(r.total_cv or 0), 'clicks': int(r.total_clicks or 0)} for r in total_stats}
+        stats_map = {r.id: {'spend': float(r.total_spend or 0), 'cv': int(r.total_cv or 0), 'clicks': int(r.total_clicks or 0)} for r in total_stats}
         
         # 2. Yesterday Stats
-        yesterday = (datetime.utcnow() - timedelta(days=1)).date() # Or use timezone aware? User is +8.
-        # UTC+8 Yesterday: Now+8h -> Date - 1
-        # Server time is likely UTC? 
-        # User said "Daily update to yesterday's full numbers".
-        # Let's assume DB dates are correct dates.
+        yesterday = (datetime.utcnow() - timedelta(days=1)).date() 
         
         y_stats = db.session.query(
             BHDailyStats.account_id,
@@ -246,17 +243,25 @@ class BHService:
         y_map = {r.account_id: float(r.spend or 0) for r in y_stats}
 
         results = []
-        today = datetime.utcnow().date() # Should use +8 for correct "Days Remaining"
+        today = datetime.utcnow().date() 
 
         for acc in accounts:
             data = acc.to_dict()
             
-            # Match via string ID
-            s = stats_map.get(acc.account_id, {'spend': 0, 'cv': 0, 'clicks': 0})
-            y_spend = y_map.get(acc.account_id, 0)
+            # Match via PK ID
+            s = stats_map.get(acc.id, {'spend': 0, 'cv': 0, 'clicks': 0})
+            
+            # Yesterday Spend: Only valid if yesterday covers this account's period
+            # Or at least check reasonable bounds if strictly required. 
+            # For now, if same ID, physical spend is same. 
+            # But if period is Jan and yesterday is Feb, Jan account shouldn't show yesterday spend.
+            y_spend_val = y_map.get(acc.account_id, 0)
+            if acc.start_date <= yesterday <= acc.end_date:
+                data['yesterday_spend'] = y_spend_val
+            else:
+                data['yesterday_spend'] = 0
             
             data['total_spend'] = s['spend']
-            data['yesterday_spend'] = y_spend
             data['total_cv'] = s['cv']
             data['total_clicks'] = s['clicks']
             
@@ -271,7 +276,28 @@ class BHService:
             
             total_days = (acc.end_date - acc.start_date).days + 1
             if total_days < 1: total_days = 1
-            daily_budget = float(acc.budget) / total_days
+            
+            # Dynamic Daily Budget Logic
+            # User request: (Total Budget - Spend) / Remaining Days
+            # remaining_days calculation needs to be before this or calculated here
+            
+            # Calculate Remaining Days (Inclusive of Today?) 
+            # User example: 2/11~2/28 is 18 days. 28-11+1=18. So inclusive of today.
+            if today < acc.start_date:
+                rem_days = total_days
+            elif today > acc.end_date:
+                rem_days = 0
+            else:
+                rem_days = (acc.end_date - today).days + 1
+            
+            remaining_budget = float(acc.budget) - s['spend']
+            
+            if rem_days > 0:
+                # If over budget, show negative to indicate issue as per user request
+                daily_budget = remaining_budget / rem_days
+            else:
+                daily_budget = 0
+                
             data['daily_budget'] = daily_budget
             
             # Days Remaining
@@ -424,11 +450,25 @@ class BHService:
             db.session.rollback()
             raise e
 
-    def get_account_daily_stats(self, account_id: str) -> list[dict]:
+    def get_account_daily_stats(self, account_pk: int) -> list[dict]:
         """
-        Get daily stats for an account.
+        Get daily stats for an account, filtered by its specific date range.
         """
-        stats = BHDailyStats.query.filter_by(account_id=account_id).order_by(BHDailyStats.date.desc()).all()
+        # 1. Get the Account to know the Date Range & Account ID
+        acc = BHAccount.query.get(account_pk)
+        if not acc:
+            raise ValueError("Account not found")
+
+        print(f"[DEBUG] Fetching Daily Stats for PK={account_pk}, AccID={acc.account_id}, Range={acc.start_date} ~ {acc.end_date}")
+
+        # 2. Query Stats matching AccountID AND Date Range
+        stats = BHDailyStats.query.filter(
+            BHDailyStats.account_id == acc.account_id,
+            BHDailyStats.date >= acc.start_date,
+            BHDailyStats.date <= acc.end_date
+        ).order_by(BHDailyStats.date.desc()).all()
+
+        print(f"[DEBUG] Found {len(stats)} items.")
         results = []
         for s in stats:
             results.append({

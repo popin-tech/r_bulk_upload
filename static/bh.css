@@ -243,3 +243,18 @@ body {
 .fade-leave-to {
     opacity: 0;
 }
+
+/* Flash Effect for Row */
+@keyframes flash-white {
+    0% {
+        background-color: rgba(255, 255, 255, 0.5);
+    }
+
+    100% {
+        background-color: transparent;
+    }
+}
+
+.flash-highlight {
+    animation: flash-white 1.0s ease-out;
+}

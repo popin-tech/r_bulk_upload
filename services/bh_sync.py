@@ -10,6 +10,152 @@ import queue
 import logging
 
 class BHSyncService:
+    def sync_account_full_range(self, account_id, app):
+        """
+        Generator function for full range sync of a specific account.
+        """
+        yield f"data: {json.dumps({'msg': f'Starting Full Sync for Account {account_id}...'})}\n\n"
+        
+        # Use passed app object
+        try:
+            with app.app_context():
+                # 1. Fetch Account Info
+                account = BHAccount.query.filter_by(account_id=account_id).first()
+                if not account:
+                    yield f"data: {json.dumps({'msg': f'Account not found.', 'type': 'error'})}\n\n"
+                    return
+                    
+                if not account.start_date:
+                    yield f"data: {json.dumps({'msg': f'Account has no Start Date.', 'type': 'error'})}\n\n"
+                    return
+                    
+                # Determine Date Range
+                start_date = account.start_date
+                end_date = account.end_date if account.end_date else date.today()
+                # Cap end_date at yesterday (or today?)
+                # Usually we sync up to yesterday for complete data, but some platforms might have today's data.
+                # User said: "Effects like bh home sync data... directly from start to end"
+                # Standard logic: sync up to yesterday to avoid partial day issues? 
+                # Or allow today? Let's go with "Start Date ~ Today (or End Date)" but reliable stats usually usually start from yesterday.
+                # Let's use max(end_date, yesterday) but capped at today.
+                
+                # Use Taiwan Time for Yesterday (Latest available data usually)
+                taiwan_now = datetime.utcnow() + timedelta(hours=8)
+                yesterday = (taiwan_now - timedelta(days=1)).date()
+                
+                # If end_date is in future or today, cap it at yesterday
+                if end_date > yesterday: end_date = yesterday
+                
+                # Ensure safe start date
+                SAFE_START_DATE = date(2024, 1, 1)
+                if start_date < SAFE_START_DATE:
+                     start_date = SAFE_START_DATE
+
+                yield f"data: {json.dumps({'msg': f'Target Range: {start_date} ~ {end_date}'})}\n\n"
+                
+                current = start_date
+                dates_to_sync = []
+                while current <= end_date:
+                    dates_to_sync.append(current)
+                    current += timedelta(days=1)
+                    
+                total_days = len(dates_to_sync)
+                yield f"data: {json.dumps({'msg': f'Total {total_days} days to be synced.'})}\n\n"
+                
+                # Platform Specific Logic
+                if account.platform == 'R':
+                    r_client = RixbeeClient()
+                    # Batch by 7 days to be efficient?
+                    batch_size = 7
+                    for i in range(0, total_days, batch_size):
+                        batch = dates_to_sync[i:i+batch_size]
+                        s_str = batch[0].strftime('%Y-%m-%d')
+                        e_str = batch[-1].strftime('%Y-%m-%d')
+                        
+                        yield f"data: {json.dumps({'msg': f'Fetching {s_str} ~ {e_str}...'})}\n\n"
+                        
+                        try:
+                            raw_data = r_client.get_report_data([account_id], s_str, e_str, agent_id=account.agent)
+                            
+                            # Process & Save
+                            data_by_date = {}
+                            for item in raw_data:
+                                item['user_id'] = account_id
+                                d_key = item.get('day')
+                                if d_key:
+                                    if d_key not in data_by_date: data_by_date[d_key] = []
+                                    data_by_date[d_key].append(item)
+                                    
+                            for target_date in batch:
+                                target_str = target_date.strftime('%Y-%m-%d')
+                                day_items = data_by_date.get(target_str, [])
+                                
+                                stats = {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0}
+                                if day_items:
+                                    batch_stats = r_client.process_daily_stats(day_items, account.cv_definition)
+                                    key = (str(account_id), target_str)
+                                    if key not in batch_stats:
+                                         # Try int key
+                                         key_int = (int(account_id) if str(account_id).isdigit() else account_id, target_str)
+                                         stats = batch_stats.get(key_int, stats)
+                                    else:
+                                         stats = batch_stats.get(key, stats)
+
+                                self._upsert_stats(account_id, target_str, stats, app=app)
+                                
+                                # Log daily stats
+                                log_msg = f"  [{target_str}] Spend: {int(stats.get('spend', 0))} | Imp: {stats.get('impressions', 0)} | Click: {stats.get('clicks', 0)} | Conv: {stats.get('conversions', 0)}"
+                                yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                                
+                            yield f"data: {json.dumps({'msg': f'  -> Saved.'})}\n\n"
+                            
+                        except Exception as e:
+                            yield f"data: {json.dumps({'msg': f'  Error: {e}', 'type': 'error'})}\n\n"
+
+                elif account.platform == 'D':
+                    # Get Token
+                    token_row = BHDAccountToken.query.filter_by(account_id=account_id).first()
+                    if not token_row:
+                        yield f"data: {json.dumps({'msg': f'No Token found for this account.', 'type': 'error'})}\n\n"
+                        return
+                    
+                    d_client = DiscoveryClient(token_row.token)
+                    
+                    # D platform might not support long ranges smoothly, let's do day by day or small batches
+                    # D Client 'fetch_daily_stats' takes list of IDs.
+                    # It queries for a range.
+                    
+                    batch_size = 7
+                    for i in range(0, total_days, batch_size):
+                        batch = dates_to_sync[i:i+batch_size]
+                        s_str = batch[0].strftime('%Y-%m-%d')
+                        e_str = batch[-1].strftime('%Y-%m-%d')
+                        
+                        yield f"data: {json.dumps({'msg': f'Fetching {s_str} ~ {e_str}...'})}\n\n"
+                        
+                        try:
+                            d_map = d_client.fetch_daily_stats([str(account_id)], s_str, e_str)
+                            
+                            for target_date in batch:
+                                 target_str = target_date.strftime('%Y-%m-%d')
+                                 key = (str(account_id), target_str)
+                                 stats = d_map.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                                 self._upsert_stats(account_id, target_str, stats, app=app)
+
+                                 # Log daily stats
+                                 log_msg = f"  [{target_str}] Spend: {int(stats.get('spend', 0))} | Imp: {stats.get('impressions', 0)} | Click: {stats.get('clicks', 0)} | Conv: {stats.get('conversions', 0)}"
+                                 yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                                 
+                            yield f"data: {json.dumps({'msg': f'  -> Saved.'})}\n\n"
+                            
+                        except Exception as e:
+                            yield f"data: {json.dumps({'msg': f'  Error: {e}', 'type': 'error'})}\n\n"
+            
+            yield f"data: {json.dumps({'msg': 'Full Sync Completed!', 'done': True})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'msg': f'Critical Error: {str(e)}', 'type': 'error'})}\n\n"
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
@@ -171,7 +317,7 @@ class BHSyncService:
                             if stats.get('spend', 0) > 0:
                                 print(f"[DEBUG DB-UPSERT] Lookup Key: {key} -> Stats Found: {stats}")
                             
-                            self._upsert_stats(acc.account_id, target_date, stats)
+                            self._upsert_stats(acc.account_id, target_date, stats, app=app)
                             
                             # Log for D Platform
                             print(f"[BH-D-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})", flush=True)
@@ -190,38 +336,45 @@ class BHSyncService:
         except Exception as e:
             yield f"data: {json.dumps({'msg': f'Critical Error: {str(e)}', 'type': 'error'})}\n\n"
 
-    def _upsert_stats(self, account_id, date, stats):
-        # Prepare object
-        # Check existing
-        existing = BHDailyStats.query.filter_by(account_id=account_id, date=date).first()
-        if existing:
-            # print(f"[DB] Found existing record for Account {account_id} Date {date}. UPDATING...")
-            existing.spend = stats['spend']
-            existing.impressions = stats['impressions']
-            existing.clicks = stats['clicks']
-            existing.conversions = stats['conversions']
-            existing.updated_at = datetime.utcnow()
-        else:
-            # print(f"[DB] No record found for Account {account_id} Date {date}. INSERTING...")
-            new_stat = BHDailyStats(
-                account_id=account_id,
-                date=date,
-                spend=stats['spend'],
-                impressions=stats['impressions'],
-                clicks=stats['clicks'],
-                conversions=stats['conversions'],
-                updated_at=datetime.utcnow(),
-                raw_data=None 
-            )
-            db.session.add(new_stat)
-            
+    def _upsert_stats(self, account_id, date, stats, app=None):
+        # Ensure context if app is passed
+        ctx = app.app_context() if app else None
+        if ctx: ctx.push()
+        
         try:
-            db.session.commit()
-            # print("[DB] Commit successful.")
-        except Exception as e:
-            db.session.rollback()
-            # print(f"[DB ERROR] Commit failed: {e}")
-            raise e
+            # Prepare object
+            # Check existing
+            existing = BHDailyStats.query.filter_by(account_id=account_id, date=date).first()
+            if existing:
+                # print(f"[DB] Found existing record for Account {account_id} Date {date}. UPDATING...")
+                existing.spend = stats['spend']
+                existing.impressions = stats['impressions']
+                existing.clicks = stats['clicks']
+                existing.conversions = stats['conversions']
+                existing.updated_at = datetime.utcnow()
+            else:
+                # print(f"[DB] No record found for Account {account_id} Date {date}. INSERTING...")
+                new_stat = BHDailyStats(
+                    account_id=account_id,
+                    date=date,
+                    spend=stats['spend'],
+                    impressions=stats['impressions'],
+                    clicks=stats['clicks'],
+                    conversions=stats['conversions'],
+                    updated_at=datetime.utcnow(),
+                    raw_data=None 
+                )
+                db.session.add(new_stat)
+                
+            try:
+                db.session.commit()
+                # print("[DB] Commit successful.")
+            except Exception as e:
+                db.session.rollback()
+                # print(f"[DB ERROR] Commit failed: {e}")
+                raise e
+        finally:
+            if ctx: ctx.pop()
 
     def sync_consistency_check(self):
         yield f"data: {json.dumps({'msg': 'Starting Data Integrity Check (Parallel)...'})}\n\n"
@@ -233,7 +386,7 @@ class BHSyncService:
             # Fetch Active Accounts
             accounts = BHAccount.query.filter_by(status='active').all()
             total = len(accounts)
-            yield f"data: {json.dumps({'msg': f'Scanning {total} active accounts with 5 workers...'})}\n\n"
+            yield f"data: {json.dumps({'msg': f'Scanning {total} active accounts with 2 workers...'})}\n\n"
 
             # Prepare for Threading
             app = current_app._get_current_object()
@@ -386,7 +539,7 @@ class BHSyncService:
 
             # Execute Parallel Jobs
             futures = []
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=2) as executor:
                 for acc in accounts:
                     if not acc.start_date: continue
                     futures.append(executor.submit(

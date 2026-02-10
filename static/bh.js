@@ -39,6 +39,7 @@ const app = createApp({
         const selectedAccount = ref(null);
 
         const dailyStats = ref([]);
+        const isStatsLoading = ref(false);
 
         // Upload State
         const uploadFile = ref(null);
@@ -48,6 +49,8 @@ const app = createApp({
         const isSyncing = ref(false);
         const syncLogs = ref([]);
         const syncModalInstance = ref(null);
+
+        const userEmail = ref(window.currentUserEmail || '');
 
         // --- Computed ---
         const isAllSelected = computed(() => {
@@ -94,27 +97,67 @@ const app = createApp({
             loadAccounts();
         });
 
-        const loadDailyStats = async (accountId) => {
+        const loadDailyStats = async (id) => {
+            isStatsLoading.value = true;
             dailyStats.value = [];
             try {
-                const res = await fetch(`/api/bh/account/${accountId}/daily`);
+                // Pass PK ID to get filtered stats
+                const res = await fetch(`/api/bh/account/${id}/daily`);
                 const data = await res.json();
                 if (data.status === 'ok') {
                     dailyStats.value = data.stats;
                 }
             } catch (e) {
                 console.error('Failed to load daily stats', e);
+            } finally {
+                isStatsLoading.value = false;
             }
         };
 
         const openDrawer = (account) => {
             selectedAccount.value = { ...account }; // Clone
             isDrawerOpen.value = true;
-            loadDailyStats(account.account_id);
+            loadDailyStats(account.id);
+        };
+
+        const closeSyncModal = () => {
+            console.log('Closing sync modal...');
+            try {
+                if (currentEventSource) {
+                    currentEventSource.close();
+                    currentEventSource = null;
+                }
+            } catch (e) {
+                console.error('Error closing EventSource:', e);
+            }
+            syncLogs.value = [];
+            isSyncing.value = false;
+            document.body.style.overflow = '';
         };
 
         const closeDrawer = () => {
+            // Close sync progress if open
+            closeSyncModal();
+
             isDrawerOpen.value = false;
+
+            // Flash the row
+            if (selectedAccount.value) {
+                const row = document.getElementById('row-' + selectedAccount.value.id);
+                if (row) {
+                    row.classList.add('flash-highlight');
+                    setTimeout(() => {
+                        row.classList.remove('flash-highlight');
+                    }, 1000);
+                }
+            }
+
+            // Delay clearing selectedAccount slightly to allow the ID to be read inside the timeout if needed, 
+            // but actually we captured accId in a const, so we can clear immediately or after transition.
+            // But clearing immediately might cause the drawer to empty before closing. 
+            // Better to clear after transition usually, but for now let's keep original behavior or just clear it.
+            // Original: selectedAccount.value = null; 
+            // Let's keep it but used captured accId.
             selectedAccount.value = null;
             dailyStats.value = [];
         };
@@ -175,13 +218,23 @@ const app = createApp({
             }
         };
 
-        const triggerSync = () => {
+        let currentEventSource = null;
+
+        const triggerSync = (specificAccountId = null) => {
             if (isSyncing.value) return;
             isSyncing.value = true;
             syncLogs.value = [];
 
             // Connect SSE
-            const eventSource = new EventSource('/api/bh/sync');
+            // If specificAccountId is provided, use the full sync endpoint
+            let url = '/api/bh/sync';
+            if (specificAccountId && typeof specificAccountId === 'string') {
+                url = `/api/bh/account/${specificAccountId}/sync_full`;
+            }
+
+            if (currentEventSource) currentEventSource.close();
+            const eventSource = new EventSource(url);
+            currentEventSource = eventSource;
 
             // Prevent background scrolling
             document.body.style.overflow = 'hidden';
@@ -199,9 +252,13 @@ const app = createApp({
 
                     if (data.done) {
                         eventSource.close();
+                        currentEventSource = null;
                         isSyncing.value = false;
                         // Refresh data
-                        loadAccounts();
+                        if (specificAccountId) {
+                            loadDailyStats(specificAccountId); // Refresh stats in drawer
+                        }
+                        loadAccounts(); // Refresh main list
                     }
                     if (data.type === 'error') {
                         // Don't close immediately, let user see error
@@ -215,15 +272,18 @@ const app = createApp({
                 // ... error handling ...
                 console.error('SSE Error', e);
                 eventSource.close();
+                currentEventSource = null;
                 isSyncing.value = false;
                 syncLogs.value.push({ msg: 'Connection Closed.', type: 'info' });
             };
         };
 
-        const closeSyncModal = () => {
-            syncLogs.value = [];
-            isSyncing.value = false;
-            document.body.style.overflow = '';
+
+
+        const getAgentName = (agentId) => {
+            if (agentId == '7161') return '台客';
+            if (agentId == '7168') return '4A';
+            return agentId || '-';
         };
 
         const getProgressColor = (percent) => {
@@ -332,6 +392,7 @@ const app = createApp({
             isSyncing,
             syncLogs,
             dailyStats,
+            isStatsLoading,
 
             loadAccounts,
             onSearchInput,
@@ -364,7 +425,14 @@ const app = createApp({
             toggleSelectAll,
             toggleSelection,
             clearSelection,
-            archiveSelected
+            archiveSelected,
+            userEmail,
+            getAgentName,
+            closeSyncModal,
+            triggerAccountSync: () => {
+                if (!selectedAccount.value) return;
+                triggerSync(selectedAccount.value.account_id);
+            }
         };
 
     }

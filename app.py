@@ -9,7 +9,7 @@ from dataclasses import asdict
 from typing import Any, Dict
 from openpyxl import Workbook
 
-from flask import Flask, jsonify, request, send_from_directory, render_template, send_file, Response, session, redirect, url_for
+from flask import Flask, jsonify, request, send_from_directory, render_template, send_file, Response, session, redirect, url_for, current_app
 
 from services.auth import AuthError, GoogleUser, verify_google_token
 from services.broadciel_client import BroadcielClient
@@ -542,6 +542,19 @@ if app.config.get("ENABLE_FRONTEND", False):
         except Exception as e:
             return _error(str(e), 500)
 
+    @app.route("/api/bh/account/<account_id>/sync_full", methods=["GET"])
+    def bh_account_full_sync(account_id):
+        user = _require_user()
+        if not isinstance(user, GoogleUser): return user
+        
+        # Permission check
+        if user.email != 'benson@popin.cc':
+            return _error("Unauthorized", 403)
+            
+        svc = BHSyncService()
+        # Capture app context here
+        app_obj = current_app._get_current_object()
+        return Response(svc.sync_account_full_range(account_id, app_obj), mimetype='text/event-stream')
     @app.route("/api/bh/accounts/bulk-status", methods=["POST"])
     def bh_bulk_status():
         user = _require_user()
@@ -569,7 +582,7 @@ if app.config.get("ENABLE_FRONTEND", False):
         
         svc = BHService()
         try:
-            stats = svc.get_account_daily_stats(account_id)
+            stats = svc.get_account_daily_stats(int(account_id))
             return jsonify({"status": "ok", "stats": stats})
         except Exception as e:
             return _error(str(e), 500)
