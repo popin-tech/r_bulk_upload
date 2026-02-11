@@ -547,9 +547,9 @@ if app.config.get("ENABLE_FRONTEND", False):
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
         
-        # Permission check
-        if user.email != 'benson@popin.cc':
-            return _error("Unauthorized", 403)
+        # Permission check - Removed as per user request (Open to all)
+        # if user.email != 'benson@popin.cc':
+        #    return _error("Unauthorized", 403)
             
         svc = BHSyncService()
         # Capture app context here
