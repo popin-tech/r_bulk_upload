@@ -19,10 +19,10 @@ class BHSyncService:
         # Use passed app object
         try:
             with app.app_context():
-                # 1. Fetch Account Info
-                account = BHAccount.query.filter_by(account_id=account_id).first()
+                # 1. Fetch Account Info (Must be Active)
+                account = BHAccount.query.filter_by(account_id=account_id, status='active').first()
                 if not account:
-                    yield f"data: {json.dumps({'msg': f'Account not found.', 'type': 'error'})}\n\n"
+                    yield f"data: {json.dumps({'msg': f'Account not found or not active.', 'type': 'error'})}\n\n"
                     return
                     
                 if not account.start_date:

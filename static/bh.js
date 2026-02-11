@@ -255,10 +255,12 @@ const app = createApp({
                         currentEventSource = null;
                         isSyncing.value = false;
                         // Refresh data
-                        if (specificAccountId) {
-                            loadDailyStats(specificAccountId); // Refresh stats in drawer
-                        }
                         loadAccounts(); // Refresh main list
+
+                        // If Drawer is open, refresh daily stats using correct PK
+                        if (selectedAccount.value) {
+                            loadDailyStats(selectedAccount.value.id);
+                        }
                     }
                     if (data.type === 'error') {
                         // Don't close immediately, let user see error

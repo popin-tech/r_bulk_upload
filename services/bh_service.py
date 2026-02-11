@@ -443,6 +443,33 @@ class BHService:
         if 'cpc_goal' in data: acc.cpc_goal = data['cpc_goal']
         if 'cpa_goal' in data: acc.cpa_goal = data['cpa_goal']
         
+        # Update Agent
+        if 'agent' in data:
+            try:
+                # Agent can be null or int
+                val = data['agent']
+                if val:
+                    acc.agent = int(val)
+                else:
+                    acc.agent = None
+            except: pass
+
+        # Update D Token
+        if 'd_token' in data and acc.platform == 'D':
+            token_val = str(data['d_token']).strip()
+            # Upsert BHDAccountToken
+            d_token = BHDAccountToken.query.filter_by(account_id=account_id).first()
+            if d_token:
+                d_token.token = token_val
+                d_token.updated_time = datetime.utcnow()
+            else:
+                new_token = BHDAccountToken(
+                    account_id=account_id,
+                    account_name=acc.account_name,
+                    token=token_val
+                )
+                db.session.add(new_token)
+        
         acc.updated_at = datetime.utcnow()
         db.session.commit()
         return True

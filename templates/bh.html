@@ -218,7 +218,7 @@
 
                             <!-- Yesterday Spend -->
                             <td>
-                                <div class="d-flex flex-column">
+                                <div class="d-flex flex-column" v-if="acc.remaining_days > 0">
                                     <span class="table-num-lg"
                                         :class="getProgressColor((acc.yesterday_spend / (acc.daily_budget || 1)) * 100)">
                                         [[ formatNumber(acc.yesterday_spend) ]]
@@ -226,6 +226,7 @@
                                     <span class="text-white-50" style="font-size: 13px;">/ [[
                                         formatNumber(acc.daily_budget) ]]</span>
                                 </div>
+                                <div v-else class="text-white-50 text-center">-</div>
                             </td>
 
                             <!-- Total Spend -->
@@ -274,13 +275,9 @@
                         <div class="bh-drawer-header">
                             <div>
                                 <h5 class="m-0 text-white">
-                                    [[ selectedAccount.platform ]] [[ selectedAccount.account_id ]] [[
-                                    selectedAccount.account_name ]]
+                                    [[ selectedAccount.platform ]] [[ selectedAccount.account_id ]]
                                 </h5>
-                                <div v-if="selectedAccount.platform === 'D' && selectedAccount.d_token"
-                                    class="text-white mt-1" style="font-size: 10px; word-break: break-all;">
-                                    Token: [[ selectedAccount.d_token ]]
-                                </div>
+                                <div class="text-white-50 small mt-1">[[ selectedAccount.account_name ]]</div>
                             </div>
                             <button class="btn btn-link text-white p-0" @click="closeDrawer">
                                 <i class="fas fa-times"></i>
@@ -289,6 +286,27 @@
                         <div class="bh-drawer-body">
                             <!-- Unified View: Edit Fields + Stats -->
                             <div class="mb-4">
+                                <!-- R Platform Agent -->
+                                <div class="row mb-3" v-if="selectedAccount.platform === 'R'">
+                                    <div class="col-12">
+                                        <label class="form-label text-white small">Agent Type</label>
+                                        <select class="form-select glass-input" v-model="selectedAccount.agent">
+                                            <option :value="null">-- Select Agent --</option>
+                                            <option value="7161">台客 (Taiwan)</option>
+                                            <option value="7168">4A (Direct)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- D Platform Token -->
+                                <div class="row mb-3" v-if="selectedAccount.platform === 'D'">
+                                    <div class="col-12">
+                                        <label class="form-label text-white small">D Token</label>
+                                        <input type="text" class="form-control glass-input"
+                                            v-model="selectedAccount.d_token" placeholder="Enter Token">
+                                    </div>
+                                </div>
+
                                 <div class="row mb-3">
                                     <div class="col-12">
                                         <label class="form-label text-white small">Total Budget</label>

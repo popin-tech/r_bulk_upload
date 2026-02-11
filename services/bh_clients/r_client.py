@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 class RixbeeClient:
     # Token Configurations (Ported from rixbee.php)
     TOKENS = {
-        'default': {'token': 'f3c1b67f25e4423001cd9a29fb310998', 'user_id': '7161'},
-        'direct': {'token': 'f3f63d0b878569c7b824096b1a0f14b2', 'user_id': '7168'},
+        'taiwan': {'token': 'f3c1b67f25e4423001cd9a29fb310998', 'user_id': '7161'}, #台客 (Old default)
+        '4a': {'token': 'f3f63d0b878569c7b824096b1a0f14b2', 'user_id': '7168'}, #4A (Old direct)
         'super': {'token': 'e36da40d2fe00d708464c0269c051140', 'user_id': '7153'}
     }
 
@@ -22,27 +22,35 @@ class RixbeeClient:
     def get_report_data(self, account_ids: list[str], start_date: str, end_date: str, agent_id: int = None) -> list[dict]:
         """
         Fetch daily report for given accounts.
-        Implements failover: Default -> Direct.
+        Implements failover: Taiwan -> 4A.
         If agent_id is provided (7168/7161), forces that token.
         """
         # Strict Token Selection based on Agent
-        if agent_id == 7168:
-            # 4A -> Direct
-            return self._fetch_with_token('direct', account_ids, start_date, end_date)
-        elif agent_id == 7161:
-            # 台客 -> Default
-            return self._fetch_with_token('default', account_ids, start_date, end_date)
-
-        # Legacy / Fallback: Try Default Token first
+        # Normalize agent_id to int if possible
+        agent_id_int = None
         try:
-            return self._fetch_with_token('default', account_ids, start_date, end_date)
+            if agent_id is not None:
+                agent_id_int = int(agent_id)
+        except (ValueError, TypeError):
+            pass
+
+        if agent_id_int == 7168:
+            # 4A -> 4a Token
+            return self._fetch_with_token('4a', account_ids, start_date, end_date)
+        elif agent_id_int == 7161:
+            # 台客 -> Taiwan Token
+            return self._fetch_with_token('taiwan', account_ids, start_date, end_date)
+        
+        # Legacy / Fallback: Try Taiwan Token first
+        try:
+            return self._fetch_with_token('taiwan', account_ids, start_date, end_date)
         except Exception as e:
-            logger.warning(f"Rixbee Default token failed: {e}. Trying Direct token...")
-            # Try Direct Token
+            logger.warning(f"Rixbee Taiwan token failed: {e}. Trying 4A token...")
+            # Try 4A Token
             try:
-                return self._fetch_with_token('direct', account_ids, start_date, end_date)
+                return self._fetch_with_token('4a', account_ids, start_date, end_date)
             except Exception as e2:
-                logger.error(f"Rixbee Direct token also failed: {e2}")
+                logger.error(f"Rixbee 4A token also failed: {e2}")
                 raise e2
 
     def _fetch_with_token(self, token_type: str, account_ids: list[str], start_date: str, end_date: str) -> list[dict]:
@@ -97,12 +105,13 @@ class RixbeeClient:
         for aid in account_ids:
             params.append(('user_id[]', aid))
 
-        # Debug Logging
-        # print(f"--- R API REQUEST ({token_type}) ---")
+        # Debug Logging - Removed per user request
+        # print(f"\n====== R API REQUEST ({token_type}) ======", flush=True)
+        # ...
         
         response = requests.get(self.API_URL, headers=headers, params=params, timeout=60)
         
-        # print(f"--- R API RESPONSE ({response.status_code}) ---")
+        # print(f"====== R API RESPONSE ({response.status_code}) ======", flush=True)
 
         
 
