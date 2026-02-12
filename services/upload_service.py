@@ -185,11 +185,12 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
         # Normalization for full-width characters (e.g. ２０２４－０１－０１)
         s = unicodedata.normalize('NFKC', s)
         
-        # Try multiple formats (DATE ONLY)
+        # Try multiple formats
         formats = [
             "%Y-%m-%d",      # Date only: 2024-01-01
             "%Y/%m/%d",      # Date only slash
-            "%Y.%m.%d"       # Date only dot
+            "%Y.%m.%d",      # Date only dot
+            "%Y-%m-%d %H"   # Date + Hour: 2024-01-01 00
         ]
         
         for fmt in formats:
@@ -216,12 +217,12 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
                 f"Row {excel_row_num}: 欄位「{field}」日期不能超過半年前 ({past_limit.strftime('%Y-%m-%d')})。"
             )
 
-        # Return Date Only String (No Timezone Shift)
-        return parsed_dt.strftime("%Y-%m-%d")
+        # Return format with time if present (or 00 if not)
+        return parsed_dt.strftime("%Y-%m-%d %H")
 
     # 都不符合 → 拋錯
     raise UploadParsingError(
-        f"Row {excel_row_num}: 欄位「{field}」格式錯誤，必須為 yyyy-mm-dd hh，例如：2025-12-10 08"
+        f"Row {excel_row_num}: 欄位「{field}」格式錯誤，必須為 yyyy-mm-dd (hh)，例如：2025-12-10 08"
     )
 
 def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[str, int]] = None) -> Dict[str, object]:

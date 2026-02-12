@@ -317,7 +317,7 @@ class BHSyncService:
                             if stats.get('spend', 0) > 0:
                                 print(f"[DEBUG DB-UPSERT] Lookup Key: {key} -> Stats Found: {stats}")
                             
-                            self._upsert_stats(acc.account_id, target_date, stats, app=app)
+                            self._upsert_stats(acc.account_id, target_date, stats)
                             
                             # Log for D Platform
                             print(f"[BH-D-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})", flush=True)
