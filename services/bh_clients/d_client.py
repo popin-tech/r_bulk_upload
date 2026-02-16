@@ -49,7 +49,7 @@ class DiscoveryClient:
             self._get_access_token()
         return {'Authorization': f'Bearer {self.access_token}'}
 
-    def fetch_daily_stats(self, account_ids: list[str], start_date: str, end_date: str, log_tag: str = '[BH-D-Daily-Sync]') -> dict:
+    def fetch_daily_stats(self, account_ids: list[str], start_date: str, end_date: str, log_tag: str = '[BH-D-Daily-Sync]', executor: ThreadPoolExecutor = None) -> dict:
         """
         Fetch stats for Discovery platform using Multithreading.
         Output: { (account_id, date): {spend, impressions, clicks, conversions} }
@@ -143,16 +143,21 @@ class DiscoveryClient:
                         r_json = rep_resp.json()
 
                         if r_json.get('code') == 1 and 'operateTooMuch' in r_json.get('msg', ''):
-                            print("    Rate limit hit, sleeping 1s...")
+                            print(f"[D-API-Block] Rate limit hit for Ad {ad_id}: {r_json}", flush=True)
                             time.sleep(1)
                             retry_count += 1
                             continue
+                        
                         report_data = r_json.get('data', [])
+                        # Log SUCCESS response
+                        print(f"[D-API-Response] Ad {ad_id} (Code {rep_resp.status_code}): {r_json}", flush=True)
                         break
                     else:
+                        print(f"[D-API-Error] Status {rep_resp.status_code} for Ad {ad_id}: {rep_resp.text}", flush=True)
                         retry_count += 1
                         time.sleep(1)
-                except Exception:
+                except Exception as e:
+                    print(f"[D-API-Exception] Ad {ad_id}: {str(e)}", flush=True)
                     retry_count += 1
                     time.sleep(1)
             
@@ -175,23 +180,37 @@ class DiscoveryClient:
                     stats_result[key]['clicks'] += int(day_stat.get('click', 0))
                     stats_result[key]['conversions'] += int(day_stat.get('cv', 0))
 
-        # 2. Parallel Fetch Ads (Max Workers = 3)
+        # 2. Parallel Fetch Ads
         all_ads = []
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        
+        # Use passed executor or create local one
+        if executor:
+            # Use shared executor
             futures = [executor.submit(_fetch_ads, cam) for cam in campaigns]
             for future in as_completed(futures):
                 result = future.result()
                 if result:
                     all_ads.extend(result)
-        
-        # 3. Parallel Fetch Reports (Max Workers = 3)
-        # Note: all_ads now contains ads from ALL campaigns managed by this token
-        if all_ads:
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                futures = [executor.submit(_fetch_report, ad) for ad in all_ads]
-                # Wait for all to complete
+        else:
+            # Fallback: Create local pool
+            with ThreadPoolExecutor(max_workers=3) as local_executor:
+                futures = [local_executor.submit(_fetch_ads, cam) for cam in campaigns]
                 for future in as_completed(futures):
-                    future.result() # Check for exceptions if needed
+                    result = future.result()
+                    if result:
+                        all_ads.extend(result)
+        
+        # 3. Parallel Fetch Reports
+        if all_ads:
+            if executor:
+                futures = [executor.submit(_fetch_report, ad) for ad in all_ads]
+                for future in as_completed(futures):
+                    future.result()
+            else:
+                 with ThreadPoolExecutor(max_workers=3) as local_executor:
+                    futures = [local_executor.submit(_fetch_report, ad) for ad in all_ads]
+                    for future in as_completed(futures):
+                        future.result()
 
         # Debug: Print Final Totals Logic
         # Group keys by Account for logging
