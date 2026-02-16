@@ -162,8 +162,15 @@ class BHSyncService:
     def sync_daily_stats(self, target_date: str = None, account_id: str = None):
         """
         Generator function that yields log messages for SSE.
+        Uses separate ThreadPoolExecutors for R and D parallel fetch operations.
         """
         yield f"data: {json.dumps({'msg': 'Starting Sync Process...'})}\n\n"
+        
+        start_time = time.time()
+        
+        # Separate executors for granular control
+        r_executor = ThreadPoolExecutor(max_workers=5)
+        d_executor = ThreadPoolExecutor(max_workers=10)
         
         try:
             # Determine Date
@@ -187,94 +194,66 @@ class BHSyncService:
             r_accounts = [a for a in accounts if a.platform == 'R']
             d_accounts = [a for a in accounts if a.platform == 'D']
             
-            # --- Process R Platform ---
+            # --- Process R Platform (Max 10) ---
             if r_accounts:
-                yield f"data: {json.dumps({'msg': f'Processing {len(r_accounts)} R-Platform accounts...'})}\n\n"
+                yield f"data: {json.dumps({'msg': f'Processing {len(r_accounts)} R-Platform accounts (Parallel)...'})}\n\n"
                 r_client = RixbeeClient()
                 
-                # R allows batch fetching, BUT the API response does NOT include 'user_id' in the items
-                # if we don't request specific dimensions. To be safe and ensure correct mapping,
-                # we process 1 by 1 and inject the user_id.
-                batch_size = 1
-                for i in range(0, len(r_accounts), batch_size):
-                    batch = r_accounts[i:i+batch_size]
-                    acc_ids = [a.account_id for a in batch]
-                    acc_map = {a.account_id: a for a in batch}
-                    
+                # Submit all R tasks
+                future_to_acc = {}
+                for acc in r_accounts:
+                    # Submit job: Fetch data for 1 account
+                    # We use batch size 1 to easily map result back to user_id
+                    f = r_executor.submit(r_client.get_report_data, [acc.account_id], target_date, target_date, acc.agent)
+                    future_to_acc[f] = acc
+
+                # Process results as they complete
+                processed_count = 0
+                for future in as_completed(future_to_acc):
+                    acc = future_to_acc[future]
                     try:
-                        yield f"data: {json.dumps({'msg': f'  Fetching batch {i+1}-{min(i+batch_size, len(r_accounts))}...'})}\n\n"
-                        # Fetch Data
-                        # Pass agent_id (Since batch_size=1, we can use batch[0].agent)
-                        agent_id = batch[0].agent
-                        raw_data = r_client.get_report_data(acc_ids, target_date, target_date, agent_id=agent_id)
+                        raw_data = future.result()
                         
-                        # INJECT user_id because API doesn't return it
-                        # Since batch_size=1, we know these items belong to acc_ids[0]
-                        current_acc_id = acc_ids[0]
+                        # Process Data (Main Thread)
+                        # Inject user_id (since we know it's for `acc` and API might strict it)
                         for item in raw_data:
-                            item['user_id'] = current_acc_id
+                            item['user_id'] = acc.account_id
+                        
+                        # Aggregate
+                        stats = {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0}
+                        if raw_data:
+                            # Aggregate using helper
+                            # RClient.process_daily_stats expects logic to sum by account
+                            # We can reuse it or just sum straightforwardly here since we have 1 acc
+                            
+                            # Using helper to ensure consistency with CV map
+                            stats_map = r_client.process_daily_stats(raw_data, acc.cv_definition)
+                            
+                            # Get correct key
+                            key_str = (str(acc.account_id), target_date)
+                            key_int = (int(acc.account_id) if str(acc.account_id).isdigit() else acc.account_id, target_date)
+                            
+                            stats = stats_map.get(key_str) or stats_map.get(key_int) or stats
 
-                        # Process Data (Group by Account)
-                        # R client raw_data is a list of dicts. 
-                        # We need to aggregate by account (and handle CV definitions).
+                        # Upsert DB
+                        self._upsert_stats(acc.account_id, target_date, stats)
                         
-                        # We need to process each account individually because CV definition varies per account?
-                        # RClient.process_daily_stats takes raw_data and one definition.
-                        # If definitions differ, we can't batch process efficiently unless we group by definition?
-                        # Or we process raw_data item by item and look up account definition.
-                        
-                        # Let's refine RClient logic. 
-                        # Ideally, we pass raw_data to a helper, and helper maps items to account, then applies CV def.
-                        
-                        # Manual Aggregation here:
-                        # 1. Group raw items by account_id
-                        items_by_acc = {}
-                        for item in raw_data:
-                            # Item 'user_id' is account id
-                            # Note: R client ensures 'user_id' is present (we added it to params)
-                            aid = str(item.get('user_id', ''))
-                            if not aid: continue
-                            if aid not in items_by_acc: items_by_acc[aid] = []
-                            items_by_acc[aid].append(item)
-                            
-                        # 2. Update DB for each account in batch
-                        count_updated = 0
-                        for acc in batch:
-                            acc_items = items_by_acc.get(acc.account_id, [])
-                            if not acc_items:
-                                # No data for this account (Spend = 0?)
-                                # Should we upsert 0? Yes, to show data is fresh.
-                                stats = {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0}
-                            else:
-                                # Aggregate
-                                stats = r_client.process_daily_stats(acc_items, acc.cv_definition)
-                                # stats is {(acc_id, date): {metrics}}
-                                # We only have 1 date here.
-                                key = (acc.account_id, target_date)
-                                stats = stats.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                        # Log
+                        log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
+                        yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                        pass
 
-                            # Upsert DB
-                            self._upsert_stats(acc.account_id, target_date, stats)
-                            
-                            # Log for R Platform
-                            print(f"[BH-R-Daily-Sync] Account {acc.account_id} Date {target_date}: {stats}", flush=True)
-                            print(f"[BH-R-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})", flush=True)
-                            
-                            # Detailed Log for SSE
-                            log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={stats.get('spend',0)}, Clicks={stats.get('clicks',0)}"
-                            yield f"data: {json.dumps({'msg': log_msg})}\n\n"
-                            
-                            count_updated += 1
-
-                        
-                        yield f"data: {json.dumps({'msg': f'  Batch processed.'})}\n\n"
-                        
                     except Exception as e:
-                        yield f"data: {json.dumps({'msg': f'  Error in R batch: {str(e)}', 'type': 'error'})}\n\n"
+                        yield f"data: {json.dumps({'msg': f'  Error R-Acc {acc.account_id}: {str(e)}', 'type': 'error'})}\n\n"
+                    
+                    processed_count += 1
+                    # Optional: Progress update every N items?
+                
+                yield f"data: {json.dumps({'msg': f'  R Platform processed ({len(r_accounts)} accounts).'})}\n\n"
 
-            # --- Process D Platform ---
+            # --- Process D Platform (Max 3) ---
             if d_accounts:
-                yield f"data: {json.dumps({'msg': f'Processing {len(d_accounts)} D-Platform accounts...'})}\n\n"
+                yield f"data: {json.dumps({'msg': f'Processing {len(d_accounts)} D-Platform accounts (Hybrid Parallel)...'})}\n\n"
                 
                 # 1. Fetch Tokens for these accounts
                 d_acc_ids = [a.account_id for a in d_accounts]
@@ -282,7 +261,6 @@ class BHSyncService:
                 token_map = {t.account_id: t.token for t in tokens} # AccID -> Token
                 
                 # 2. Group Accounts by Token
-                # Key: Token, Value: List[BHAccount]
                 accs_by_token = {}
                 for acc in d_accounts:
                     token = token_map.get(acc.account_id)
@@ -294,36 +272,25 @@ class BHSyncService:
                         accs_by_token[token] = []
                     accs_by_token[token].append(acc)
 
-                # 3. Process by Token Group
+                # 3. Process by Token Group (Sequential Token, Parallel Internals)
                 for token, acc_batch in accs_by_token.items():
                     try:
-                        yield f"data: {json.dumps({'msg': f'  Fetching D stats for {len(acc_batch)} accounts (Token: {token[:10]}...)'})}\n\n"
+                        batch_ids = [str(a.account_id) for a in acc_batch]
+                        yield f"data: {json.dumps({'msg': f'  Fetching D stats for Account(s): {batch_ids} (Token: {token[:6]}...)'})}\n\n"
+                        
                         d_client = DiscoveryClient(token)
                         
-                        # Pass the specific account IDs managed by this token
-                        batch_ids = [str(a.account_id) for a in acc_batch]
-                        d_stats_map = d_client.fetch_daily_stats(batch_ids, target_date, target_date)
+                        # PASS D-SPECIFIC EXECUTOR (Max 3)
+                        d_stats_map = d_client.fetch_daily_stats(batch_ids, target_date, target_date, executor=d_executor)
                         
-                        # DEBUG: Print all keys gathered from D Platform
-                        # print(f"[DEBUG D-MAP KEYS] {list(d_stats_map.keys())}")
-
                         # Update DB for accounts in this batch
                         for acc in acc_batch:
-                            # Look up stats
                             key = (acc.account_id, target_date)
                             stats = d_stats_map.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
                             
-                            # DEBUG: detailed lookup log
-                            if stats.get('spend', 0) > 0:
-                                print(f"[DEBUG DB-UPSERT] Lookup Key: {key} -> Stats Found: {stats}")
-                            
                             self._upsert_stats(acc.account_id, target_date, stats)
                             
-                            # Log for D Platform
-                            print(f"[BH-D-Daily-Sync-SQL] Account {acc.account_id} Date {target_date} -> Upserted (Spend={stats.get('spend')})", flush=True)
-                            
-                            # Detailed Log
-                            log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={stats.get('spend',0)}, Clicks={stats.get('clicks',0)}"
+                            log_msg = f"    [{acc.platform}] {acc.account_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
                             yield f"data: {json.dumps({'msg': log_msg})}\n\n"
                         
                     except Exception as e:
@@ -331,10 +298,15 @@ class BHSyncService:
 
                 yield f"data: {json.dumps({'msg': f'  D Platform processed.'})}\n\n"
 
-            yield f"data: {json.dumps({'msg': 'Sync Completed Successfully!', 'done': True})}\n\n"
+            elapsed = time.time() - start_time
+            time_str = f"{int(elapsed // 60)}分{int(elapsed % 60)}秒({int(elapsed)}秒)"
+            yield f"data: {json.dumps({'msg': f'Sync Completed Successfully! 總耗時時間 {time_str}', 'done': True})}\n\n"
             
         except Exception as e:
             yield f"data: {json.dumps({'msg': f'Critical Error: {str(e)}', 'type': 'error'})}\n\n"
+        finally:
+            r_executor.shutdown(wait=False)
+            d_executor.shutdown(wait=False)
 
     def _upsert_stats(self, account_id, date, stats, app=None):
         # Ensure context if app is passed
@@ -378,6 +350,9 @@ class BHSyncService:
 
     def sync_consistency_check(self):
         yield f"data: {json.dumps({'msg': 'Starting Data Integrity Check (Parallel)...'})}\n\n"
+        
+        # Shared executor for D-Platform concurrent details fetching
+        d_executor = ThreadPoolExecutor(max_workers=10)
         
         try:
             yesterday = datetime.utcnow() + timedelta(hours=8) - timedelta(days=1)
@@ -519,7 +494,8 @@ class BHSyncService:
                                     target_str = m_date.strftime('%Y-%m-%d')
                                     print(f"[Worker-Log]   -> D-Fetch {acc_id} Date {target_str}...", flush=True)
                                     try:
-                                        d_map = d_client.fetch_daily_stats([str(acc_id)], target_str, target_str, log_tag='[BH-D-Intra]')
+                                        # Use Shared Executor
+                                        d_map = d_client.fetch_daily_stats([str(acc_id)], target_str, target_str, log_tag='[BH-D-Intra]', executor=d_executor)
                                         key = (acc_id, target_str)
                                         stats = d_map.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
                                         
@@ -559,3 +535,5 @@ class BHSyncService:
 
         except Exception as e:
             yield f"data: {json.dumps({'msg': f'Critical Error during Check: {str(e)}', 'type': 'error'})}\n\n"
+        finally:
+            d_executor.shutdown(wait=False)
