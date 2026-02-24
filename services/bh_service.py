@@ -29,6 +29,7 @@ class BHService:
             'EndDate': 'end_date',
             'CPCGoal': 'cpc_goal',
             'CPAGoal': 'cpa_goal',
+            'CTRGoal': 'ctr_goal',
             'R的cv定義': 'cv_definition'
             # 'Token': 'token' # Optional
         }
@@ -71,6 +72,7 @@ class BHService:
                     budget = float(row.get('Budget', 0))
                     cpc = float(row.get('CPCGoal', 0)) if pd.notna(row.get('CPCGoal')) else None
                     cpa = float(row.get('CPAGoal', 0)) if pd.notna(row.get('CPAGoal')) else None
+                    ctr = float(row.get('CTRGoal', 0)) if pd.notna(row.get('CTRGoal')) else None
                 except ValueError:
                     results['errors'].append(f"Row {index+2}: Invalid Number Format")
                     continue
@@ -110,6 +112,7 @@ class BHService:
                     end_date=e_date,
                     cpc_goal=cpc,
                     cpa_goal=cpa,
+                    ctr_goal=ctr,
                     cv_definition=cv_def,
                     owner_email=owner_email,
                     status='active',
@@ -229,7 +232,8 @@ class BHService:
             BHAccount.id,
             func.sum(BHDailyStats.spend).label('total_spend'),
             func.sum(BHDailyStats.conversions).label('total_cv'),
-            func.sum(BHDailyStats.clicks).label('total_clicks')
+            func.sum(BHDailyStats.clicks).label('total_clicks'),
+            func.sum(BHDailyStats.impressions).label('total_impressions')
         ).join(
             BHAccount, BHAccount.account_id == BHDailyStats.account_id
         ).filter(
@@ -238,7 +242,7 @@ class BHService:
             BHDailyStats.date <= BHAccount.end_date
         ).group_by(BHAccount.id).all()
         
-        stats_map = {r.id: {'spend': float(r.total_spend or 0), 'cv': int(r.total_cv or 0), 'clicks': int(r.total_clicks or 0)} for r in total_stats}
+        stats_map = {r.id: {'spend': float(r.total_spend or 0), 'cv': int(r.total_cv or 0), 'clicks': int(r.total_clicks or 0), 'impressions': int(r.total_impressions or 0)} for r in total_stats}
         
         # 2. Yesterday Stats
         yesterday = (datetime.utcnow() - timedelta(days=1)).date() 
@@ -268,7 +272,7 @@ class BHService:
             data = acc.to_dict()
             
             # Match via PK ID
-            s = stats_map.get(acc.id, {'spend': 0, 'cv': 0, 'clicks': 0})
+            s = stats_map.get(acc.id, {'spend': 0, 'cv': 0, 'clicks': 0, 'impressions': 0})
             
             # Attach Token if D platform (or always, frontend can filter)
             if acc.platform == 'D':
@@ -348,6 +352,11 @@ class BHService:
                 data['current_cpc'] = s['spend'] / s['clicks']
             else:
                 data['current_cpc'] = 0
+                
+            if s['impressions'] > 0:
+                data['current_ctr'] = (s['clicks'] / s['impressions']) * 100
+            else:
+                data['current_ctr'] = 0
             
             # Progress Color Logic (Dashboard requirement)
             # Percentage = Total Spend / Total Budget
@@ -405,6 +414,8 @@ class BHService:
                 '目前CPC': d.get('current_cpc'),
                 'CPA目標': d.get('cpa_goal'),
                 '目前CPA': d.get('current_cpa'),
+                'CTR目標': d.get('ctr_goal'),
+                '目前CTR': d.get('current_ctr'),
                 '走期開始': d.get('start_date'),
                 '走期結束': d.get('end_date'),
                 'CV定義': d.get('cv_definition')
@@ -442,6 +453,7 @@ class BHService:
             except: pass
         if 'cpc_goal' in data: acc.cpc_goal = data['cpc_goal']
         if 'cpa_goal' in data: acc.cpa_goal = data['cpa_goal']
+        if 'ctr_goal' in data: acc.ctr_goal = data['ctr_goal']
         
         # Update Agent
         if 'agent' in data:

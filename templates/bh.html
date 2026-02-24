@@ -189,6 +189,7 @@
                             <th style="width: 140px;">Period</th>
                             <th style="width: 100px;">CPC</th>
                             <th style="width: 100px;">CPA</th>
+                            <th style="width: 100px;">CTR</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -248,7 +249,9 @@
                             </td>
                             <td>
                                 <div class="d-flex flex-column">
-                                    <span class="table-num-lg">[[ formatNumber(acc.current_cpc, 1) ]]</span>
+                                    <span class="table-num-lg"
+                                        :class="{'text-danger': acc.cpc_goal && acc.current_cpc > acc.cpc_goal}">[[
+                                        formatNumber(acc.current_cpc, 1) ]]</span>
                                     <span class="text-white-50" v-if="acc.cpc_goal" style="font-size: 13px;">/ [[
                                         formatNumber(acc.cpc_goal, 1) ]]</span>
                                     <span class="text-white-50" v-else style="font-size: 13px;">/ -</span>
@@ -256,9 +259,23 @@
                             </td>
                             <td>
                                 <div class="d-flex flex-column">
-                                    <span class="table-num-lg">[[ formatNumber(acc.current_cpa) ]]</span>
+                                    <span class="table-num-lg"
+                                        :class="{'text-danger': acc.cpa_goal && acc.current_cpa > acc.cpa_goal}">[[
+                                        formatNumber(acc.current_cpa) ]]</span>
                                     <span class="text-white-50" v-if="acc.cpa_goal" style="font-size: 13px;">/ [[
                                         formatNumber(acc.cpa_goal) ]]</span>
+                                    <span class="text-white-50" v-else style="font-size: 13px;">/ -</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="d-flex flex-column">
+                                    <!-- CTR: Red if current < goal -->
+                                    <span class="table-num-lg"
+                                        :class="{'text-danger': acc.ctr_goal && acc.current_ctr < acc.ctr_goal}">[[
+                                        formatNumber(acc.current_ctr, 2) ]]%</span>
+                                    <span class="text-white-50" v-if="acc.ctr_goal !== null" style="font-size: 13px;">/
+                                        [[
+                                        formatNumber(acc.ctr_goal * 100, 2) ]]%</span>
                                     <span class="text-white-50" v-else style="font-size: 13px;">/ -</span>
                                 </div>
                             </td>
@@ -327,15 +344,20 @@
                                     </div>
                                 </div>
                                 <div class="row mb-3">
-                                    <div class="col-6">
+                                    <div class="col-4">
                                         <label class="form-label text-white small">CPC Goal</label>
                                         <input type="number" class="form-control glass-input"
                                             v-model.number="selectedAccount.cpc_goal" step="0.1">
                                     </div>
-                                    <div class="col-6">
+                                    <div class="col-4">
                                         <label class="form-label text-white small">CPA Goal</label>
                                         <input type="number" class="form-control glass-input"
                                             v-model.number="selectedAccount.cpa_goal" step="1">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label text-white small">CTR Goal</label>
+                                        <input type="number" class="form-control glass-input"
+                                            v-model.number="selectedAccount.ctr_goal" step="0.01">
                                     </div>
                                 </div>
                                 <!-- Save Button -->
