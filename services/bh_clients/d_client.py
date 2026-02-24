@@ -143,21 +143,22 @@ class DiscoveryClient:
                         r_json = rep_resp.json()
 
                         if r_json.get('code') == 1 and 'operateTooMuch' in r_json.get('msg', ''):
-                            print(f"[D-API-Block] Rate limit hit for Ad {ad_id}: {r_json}", flush=True)
+                            logger.warning(f"[D-API-Block] Rate limit hit for Ad {ad_id}: {r_json}")
                             time.sleep(1)
                             retry_count += 1
                             continue
                         
                         report_data = r_json.get('data', [])
-                        # Log SUCCESS response
-                        print(f"[D-API-Response] Ad {ad_id} (Code {rep_resp.status_code}): {r_json}", flush=True)
+                        # Log SUCCESS response ONLY if there is actual data
+                        if report_data:
+                            logger.info(f"[D-API-Response] Aid {acc_id} Ad {ad_id} (Code {rep_resp.status_code}): {r_json}")
                         break
                     else:
-                        print(f"[D-API-Error] Status {rep_resp.status_code} for Ad {ad_id}: {rep_resp.text}", flush=True)
+                        logger.error(f"[D-API-Error] Aid {acc_id} Status {rep_resp.status_code} for Ad {ad_id}: {rep_resp.text}")
                         retry_count += 1
                         time.sleep(1)
                 except Exception as e:
-                    print(f"[D-API-Exception] Ad {ad_id}: {str(e)}", flush=True)
+                    logger.exception(f"[D-API-Exception] Aid {acc_id} Ad {ad_id}: {str(e)}")
                     retry_count += 1
                     time.sleep(1)
             
