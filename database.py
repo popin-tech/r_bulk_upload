@@ -17,6 +17,7 @@ class BHAccount(db.Model):
     end_date = db.Column(db.Date, nullable=False, comment='走期結束日')
     cpc_goal = db.Column(db.Numeric(10, 2), nullable=True, comment='目標CPC')
     cpa_goal = db.Column(db.Numeric(10, 2), nullable=True, comment='目標CPA')
+    ctr_goal = db.Column(db.Numeric(10, 4), nullable=True, comment='目標CTR')
     cv_definition = db.Column(db.Text, nullable=True, comment='R平台的轉換定義')
     owner_email = db.Column(db.String(255), nullable=False, comment='負責人Email')
     status = db.Column(db.Enum('active', 'archived'), nullable=False, default='active', comment='狀態')
@@ -41,6 +42,7 @@ class BHAccount(db.Model):
             'end_date': self.end_date.isoformat() if self.end_date else None,
             'cpc_goal': float(self.cpc_goal) if self.cpc_goal else None,
             'cpa_goal': float(self.cpa_goal) if self.cpa_goal else None,
+            'ctr_goal': float(self.ctr_goal) if self.ctr_goal else None,
             'cv_definition': self.cv_definition,
             'owner_email': self.owner_email,
             'status': self.status,
