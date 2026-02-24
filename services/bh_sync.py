@@ -170,7 +170,7 @@ class BHSyncService:
         
         # Separate executors for granular control
         r_executor = ThreadPoolExecutor(max_workers=5)
-        d_executor = ThreadPoolExecutor(max_workers=10)
+        d_executor = ThreadPoolExecutor(max_workers=7)
         
         try:
             # Determine Date
@@ -275,7 +275,7 @@ class BHSyncService:
                 # 3. Process by Token Group (Sequential Token, Parallel Internals)
                 for token, acc_batch in accs_by_token.items():
                     try:
-                        batch_ids = [str(a.account_id) for a in acc_batch]
+                        batch_ids = list(set([str(a.account_id) for a in acc_batch]))
                         yield f"data: {json.dumps({'msg': f'  Fetching D stats for Account(s): {batch_ids} (Token: {token[:6]}...)'})}\n\n"
                         
                         d_client = DiscoveryClient(token)
