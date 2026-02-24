@@ -80,8 +80,9 @@ class DiscoveryClient:
             acc_id = str(cam.get('account_id')) 
             
             # Fallback acc_id logic
-            if (not acc_id or acc_id == 'None') and account_ids and len(account_ids) == 1:
-                acc_id = str(account_ids[0])
+            unique_ids = list(set(account_ids)) if account_ids else []
+            if (not acc_id or acc_id == 'None') and unique_ids and len(unique_ids) == 1:
+                acc_id = str(unique_ids[0])
 
             if not acc_id or acc_id == 'None':
                 return []
