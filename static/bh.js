@@ -226,10 +226,10 @@ const app = createApp({
             syncLogs.value = [];
 
             // Connect SSE
-            // If specificAccountId is provided, use the full sync endpoint
+            // If specificAccountId is provided, use the full sync endpoint (Expects PK id)
             let url = '/api/bh/sync';
-            if (specificAccountId && typeof specificAccountId === 'string') {
-                url = `/api/bh/account/${specificAccountId}/sync_full`;
+            if (specificAccountId && typeof specificAccountId === 'number') {
+                url = `/api/bh/account_pk/${specificAccountId}/sync_full`;
             }
 
             if (currentEventSource) currentEventSource.close();
@@ -433,7 +433,7 @@ const app = createApp({
             closeSyncModal,
             triggerAccountSync: () => {
                 if (!selectedAccount.value) return;
-                triggerSync(selectedAccount.value.account_id);
+                triggerSync(selectedAccount.value.id);
             }
         };
 
