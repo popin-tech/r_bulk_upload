@@ -542,8 +542,8 @@ if app.config.get("ENABLE_FRONTEND", False):
         except Exception as e:
             return _error(str(e), 500)
 
-    @app.route("/api/bh/account/<account_id>/sync_full", methods=["GET"])
-    def bh_account_full_sync(account_id):
+    @app.route("/api/bh/account_pk/<int:pk_id>/sync_full", methods=["GET"])
+    def bh_account_full_sync(pk_id):
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
         
@@ -554,7 +554,7 @@ if app.config.get("ENABLE_FRONTEND", False):
         svc = BHSyncService()
         # Capture app context here
         app_obj = current_app._get_current_object()
-        return Response(svc.sync_account_full_range(account_id, app_obj), mimetype='text/event-stream')
+        return Response(svc.sync_account_full_range_by_pk(pk_id, app_obj), mimetype='text/event-stream')
     @app.route("/api/bh/accounts/bulk-status", methods=["POST"])
     def bh_bulk_status():
         user = _require_user()

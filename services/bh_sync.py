@@ -10,21 +10,23 @@ import queue
 import logging
 
 class BHSyncService:
-    def sync_account_full_range(self, account_id, app):
+    def sync_account_full_range_by_pk(self, pk_id, app):
         """
-        Generator function for full range sync of a specific account.
+        Generator function for full range sync of a specific account record (by Database Primary Key).
         """
-        yield f"data: {json.dumps({'msg': f'Starting Full Sync for Account {account_id}...'})}\n\n"
+        yield f"data: {json.dumps({'msg': f'Starting Full Sync for Record ID {pk_id}...'})}\n\n"
         
         # Use passed app object
         try:
             with app.app_context():
-                # 1. Fetch Account Info (Must be Active)
-                account = BHAccount.query.filter_by(account_id=account_id, status='active').first()
-                if not account:
-                    yield f"data: {json.dumps({'msg': f'Account not found or not active.', 'type': 'error'})}\n\n"
+                # 1. Fetch Account Info by Primary Key (Must be Active)
+                account = BHAccount.query.get(pk_id)
+                if not account or account.status != 'active':
+                    yield f"data: {json.dumps({'msg': f'Account record not found or not active.', 'type': 'error'})}\n\n"
                     return
                     
+                account_id = account.account_id
+                
                 if not account.start_date:
                     yield f"data: {json.dumps({'msg': f'Account has no Start Date.', 'type': 'error'})}\n\n"
                     return
