@@ -51,6 +51,8 @@ const app = createApp({
         const syncModalInstance = ref(null);
 
         const userEmail = ref(window.currentUserEmail || '');
+        const customSyncStartDate = ref('');
+        const customSyncEndDate = ref('');
 
         // --- Computed ---
         const isAllSelected = computed(() => {
@@ -117,6 +119,16 @@ const app = createApp({
         const openDrawer = (account) => {
             selectedAccount.value = { ...account }; // Clone
             isDrawerOpen.value = true;
+
+            const d = new Date();
+            d.setDate(d.getDate() - 1); // 預設為昨天
+            const year = d.getFullYear();
+            const mon = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const yesterdayStr = `${year}-${mon}-${day}`;
+            customSyncStartDate.value = yesterdayStr;
+            customSyncEndDate.value = yesterdayStr;
+
             loadDailyStats(account.id);
         };
 
@@ -220,7 +232,7 @@ const app = createApp({
 
         let currentEventSource = null;
 
-        const triggerSync = (specificAccountId = null) => {
+        const triggerSync = (specificAccountId = null, isCustom = false) => {
             if (isSyncing.value) return;
             isSyncing.value = true;
             syncLogs.value = [];
@@ -229,7 +241,11 @@ const app = createApp({
             // If specificAccountId is provided, use the full sync endpoint (Expects PK id)
             let url = '/api/bh/sync';
             if (specificAccountId && typeof specificAccountId === 'number') {
-                url = `/api/bh/account_pk/${specificAccountId}/sync_full`;
+                if (isCustom) {
+                    url = `/api/bh/account_pk/${specificAccountId}/sync_full?start_date=${customSyncStartDate.value}&end_date=${customSyncEndDate.value}`;
+                } else {
+                    url = `/api/bh/account_pk/${specificAccountId}/sync_full`;
+                }
             }
 
             if (currentEventSource) currentEventSource.close();
@@ -434,6 +450,20 @@ const app = createApp({
             triggerAccountSync: () => {
                 if (!selectedAccount.value) return;
                 triggerSync(selectedAccount.value.id);
+            },
+            customSyncStartDate,
+            customSyncEndDate,
+            triggerCustomSync: () => {
+                if (!selectedAccount.value) return;
+                if (!customSyncStartDate.value || !customSyncEndDate.value) {
+                    alert('Please select both start and end dates.');
+                    return;
+                }
+                if (customSyncStartDate.value > customSyncEndDate.value) {
+                    alert('Start date must be before or equal to end date.');
+                    return;
+                }
+                triggerSync(selectedAccount.value.id, true);
             }
         };
 

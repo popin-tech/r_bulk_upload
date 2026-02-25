@@ -366,10 +366,33 @@
                                 </button>
 
                                 <!-- Admin Full Sync Button -->
-                                <button class="btn btn-warning w-100" @click="triggerAccountSync" :disabled="isSyncing">
+                                <button class="btn btn-warning w-100 mb-2" @click="triggerAccountSync"
+                                    :disabled="isSyncing">
                                     <i class="fas fa-sync me-2" :class="{'fa-spin': isSyncing}"></i>
                                     Full Sync (Resync All Data)
                                 </button>
+
+                                <!-- Custom Sync (Admin Only) -->
+                                <div v-if="userEmail === 'benson@popin.cc'" class="p-3 mb-2"
+                                    style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;">
+                                    <h6 class="text-white mb-2" style="font-size: 13px;">Custom Date Sync</h6>
+                                    <div class="row gx-2 mb-2">
+                                        <div class="col-6">
+                                            <label class="form-label text-white-50 small mb-1">Start Date</label>
+                                            <input type="date" class="form-control form-control-sm glass-input"
+                                                v-model="customSyncStartDate" @click="$event.target.showPicker()">
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="form-label text-white-50 small mb-1">End Date</label>
+                                            <input type="date" class="form-control form-control-sm glass-input"
+                                                v-model="customSyncEndDate" @click="$event.target.showPicker()">
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-outline-info w-100 btn-sm" @click="triggerCustomSync"
+                                        :disabled="isSyncing">
+                                        <i class="fas fa-calendar-check me-1"></i> Sync Custom Range
+                                    </button>
+                                </div>
 
                                 <!-- Sync Progress Log (In Drawer) -->
                                 <div v-if="syncLogs.length > 0 || isSyncing"

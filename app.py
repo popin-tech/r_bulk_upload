@@ -547,14 +547,17 @@ if app.config.get("ENABLE_FRONTEND", False):
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
         
-        # Permission check - Removed as per user request (Open to all)
-        # if user.email != 'benson@popin.cc':
-        #    return _error("Unauthorized", 403)
+        custom_start = request.args.get('start_date')
+        custom_end = request.args.get('end_date')
+
+        # Limit custom sync to benson
+        if (custom_start or custom_end) and user.email != 'benson@popin.cc':
+            return _error("Unauthorized for custom sync", 403)
             
         svc = BHSyncService()
         # Capture app context here
         app_obj = current_app._get_current_object()
-        return Response(svc.sync_account_full_range_by_pk(pk_id, app_obj), mimetype='text/event-stream')
+        return Response(svc.sync_account_full_range_by_pk(pk_id, app_obj, custom_start, custom_end), mimetype='text/event-stream')
     @app.route("/api/bh/accounts/bulk-status", methods=["POST"])
     def bh_bulk_status():
         user = _require_user()
