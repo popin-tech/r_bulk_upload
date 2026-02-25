@@ -87,22 +87,29 @@ class DiscoveryClient:
             if not acc_id or acc_id == 'None':
                 return []
             
-            # Date Check Logic
-            cam_end_str = cam.get('end_date')
-            if cam_end_str:
-                try:
-                    if ' ' in cam_end_str:
-                        cam_end = datetime.strptime(cam_end_str, '%Y-%m-%d %H:%M:%S')
-                    else:
-                        cam_end = datetime.strptime(cam_end_str, '%Y-%m-%d')
-                    
-                    cutoff_date = cam_end + timedelta(days=30)
-                    req_start = datetime.strptime(start_date, '%Y-%m-%d')
-                    
-                    if req_start > cutoff_date:
-                        return []
-                except Exception:
-                    pass
+            # Status and Date Check Logic
+            # Condition 1: If status is active (1 or True), allow directly.
+            cam_status = cam.get('status')
+            is_active = (cam_status == 1 or cam_status == True or str(cam_status).lower() == 'true')
+            
+            if not is_active:
+                # Condition 2: If inactive, check grace period against end_date
+                cam_end_str = cam.get('end_date')
+                if cam_end_str:
+                    try:
+                        if ' ' in cam_end_str:
+                            cam_end = datetime.strptime(cam_end_str, '%Y-%m-%d %H:%M:%S')
+                        else:
+                            cam_end = datetime.strptime(cam_end_str, '%Y-%m-%d')
+                        
+                        cutoff_date = cam_end + timedelta(days=30)
+                        req_start = datetime.strptime(start_date, '%Y-%m-%d')
+                        
+                        if req_start > cutoff_date:
+                            return [] # Campaign is dead and past grace period
+                    except Exception:
+                        pass
+                # If inactive but no end_date exists (or parsing failed), we implicitly allow it to proceed and check ads.
 
             ad_list_url = self.AD_LIST_BASE_URL.format(cam_id)
             try:
@@ -151,8 +158,14 @@ class DiscoveryClient:
                         
                         report_data = r_json.get('data', [])
                         # Log SUCCESS response ONLY if there is actual data
+                        #if report_data:
+
+                        #logger.info(f"[D-API-Response] Aid {acc_id} Ad {ad_id} (Code {rep_resp.status_code}): {r_json}")
                         if report_data:
-                            logger.info(f"[D-API-Response] Aid {acc_id} Ad {ad_id} (Code {rep_resp.status_code}): {r_json}")
+                            print("[OO] if report_data = True]", flush=True)
+                        else:
+                            print("[XX] if report_data = True]", flush=False)
+                        print(f"[D-API-Response] Aid {acc_id} Ad {ad_id} (Code {rep_resp.status_code}): {r_json}", flush=True)
                         break
                     else:
                         logger.error(f"[D-API-Error] Aid {acc_id} Status {rep_resp.status_code} for Ad {ad_id}: {rep_resp.text}")

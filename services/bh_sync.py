@@ -1,5 +1,7 @@
 import time
 import json
+import logging
+import random
 from datetime import datetime, timedelta, date
 from database import db, BHAccount, BHDailyStats, BHDAccountToken
 from services.bh_clients.r_client import RixbeeClient
@@ -7,14 +9,16 @@ from services.bh_clients.d_client import DiscoveryClient
 from flask import current_app
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
-import logging
 
 class BHSyncService:
-    def sync_account_full_range_by_pk(self, pk_id, app):
+    def sync_account_full_range_by_pk(self, pk_id, app, custom_start_date=None, custom_end_date=None):
         """
         Generator function for full range sync of a specific account record (by Database Primary Key).
         """
-        yield f"data: {json.dumps({'msg': f'Starting Full Sync for Record ID {pk_id}...'})}\n\n"
+        if custom_start_date and custom_end_date:
+            yield f"data: {json.dumps({'msg': f'Starting Custom Sync for Record ID {pk_id} ({custom_start_date} ~ {custom_end_date})...'})}\n\n"
+        else:
+            yield f"data: {json.dumps({'msg': f'Starting Full Sync for Record ID {pk_id}...'})}\n\n"
         
         # Use passed app object
         try:
@@ -27,31 +31,35 @@ class BHSyncService:
                     
                 account_id = account.account_id
                 
-                if not account.start_date:
-                    yield f"data: {json.dumps({'msg': f'Account has no Start Date.', 'type': 'error'})}\n\n"
-                    return
+                if custom_start_date and custom_end_date:
+                    try:
+                        start_date = datetime.strptime(custom_start_date, '%Y-%m-%d').date()
+                        end_date = datetime.strptime(custom_end_date, '%Y-%m-%d').date()
+                        if start_date > end_date:
+                            start_date, end_date = end_date, start_date
+                    except Exception as e:
+                        yield f"data: {json.dumps({'msg': f'Invalid custom date format: {e}', 'type': 'error'})}\n\n"
+                        return
+                else:
+                    if not account.start_date:
+                        yield f"data: {json.dumps({'msg': f'Account has no Start Date.', 'type': 'error'})}\n\n"
+                        return
+                        
+                    # Determine Date Range
+                    start_date = account.start_date
+                    end_date = account.end_date if account.end_date else date.today()
                     
-                # Determine Date Range
-                start_date = account.start_date
-                end_date = account.end_date if account.end_date else date.today()
-                # Cap end_date at yesterday (or today?)
-                # Usually we sync up to yesterday for complete data, but some platforms might have today's data.
-                # User said: "Effects like bh home sync data... directly from start to end"
-                # Standard logic: sync up to yesterday to avoid partial day issues? 
-                # Or allow today? Let's go with "Start Date ~ Today (or End Date)" but reliable stats usually usually start from yesterday.
-                # Let's use max(end_date, yesterday) but capped at today.
-                
-                # Use Taiwan Time for Yesterday (Latest available data usually)
-                taiwan_now = datetime.utcnow() + timedelta(hours=8)
-                yesterday = (taiwan_now - timedelta(days=1)).date()
-                
-                # If end_date is in future or today, cap it at yesterday
-                if end_date > yesterday: end_date = yesterday
-                
-                # Ensure safe start date
-                SAFE_START_DATE = date(2024, 1, 1)
-                if start_date < SAFE_START_DATE:
-                     start_date = SAFE_START_DATE
+                    # Use Taiwan Time for Yesterday (Latest available data usually)
+                    taiwan_now = datetime.utcnow() + timedelta(hours=8)
+                    yesterday = (taiwan_now - timedelta(days=1)).date()
+                    
+                    # If end_date is in future or today, cap it at yesterday
+                    if end_date > yesterday: end_date = yesterday
+                    
+                    # Ensure safe start date
+                    SAFE_START_DATE = date(2024, 1, 1)
+                    if start_date < SAFE_START_DATE:
+                         start_date = SAFE_START_DATE
 
                 yield f"data: {json.dumps({'msg': f'Target Range: {start_date} ~ {end_date}'})}\n\n"
                 
@@ -171,8 +179,8 @@ class BHSyncService:
         start_time = time.time()
         
         # Separate executors for granular control
-        r_executor = ThreadPoolExecutor(max_workers=5)
-        d_executor = ThreadPoolExecutor(max_workers=7)
+        r_executor = ThreadPoolExecutor(max_workers=2)
+        d_executor = ThreadPoolExecutor(max_workers=5)
         
         try:
             # Determine Date
@@ -195,6 +203,10 @@ class BHSyncService:
             # Group by Platform
             r_accounts = [a for a in accounts if a.platform == 'R']
             d_accounts = [a for a in accounts if a.platform == 'D']
+            
+            # Randomize D platform accounts to prevent same accounts always failing on API instability
+            if d_accounts:
+                random.shuffle(d_accounts)
             
             # --- Process R Platform (Max 10) ---
             if r_accounts:
@@ -319,22 +331,31 @@ class BHSyncService:
             # Prepare object
             # Check existing
             existing = BHDailyStats.query.filter_by(account_id=account_id, date=date).first()
+            
+            new_spend = float(stats.get('spend', 0))
+
             if existing:
-                # print(f"[DB] Found existing record for Account {account_id} Date {date}. UPDATING...")
-                existing.spend = stats['spend']
-                existing.impressions = stats['impressions']
-                existing.clicks = stats['clicks']
-                existing.conversions = stats['conversions']
-                existing.updated_at = datetime.utcnow()
+                old_spend = float(existing.spend) if existing.spend else 0.0
+                
+                # Target Strategy: Only overwrite if the newly fetched spend is strictly greater
+                if new_spend > old_spend:
+                    existing.spend = new_spend
+                    existing.impressions = stats.get('impressions', 0)
+                    existing.clicks = stats.get('clicks', 0)
+                    existing.conversions = stats.get('conversions', 0)
+                    existing.updated_at = datetime.utcnow()
+                    db.session.add(existing) # Re-add to session for update tracking
+                else:
+                    # Skip database update because the new data is less or equal (potential API anomaly)
+                    pass
             else:
-                # print(f"[DB] No record found for Account {account_id} Date {date}. INSERTING...")
                 new_stat = BHDailyStats(
                     account_id=account_id,
                     date=date,
-                    spend=stats['spend'],
-                    impressions=stats['impressions'],
-                    clicks=stats['clicks'],
-                    conversions=stats['conversions'],
+                    spend=new_spend,
+                    impressions=stats.get('impressions', 0),
+                    clicks=stats.get('clicks', 0),
+                    conversions=stats.get('conversions', 0),
                     updated_at=datetime.utcnow(),
                     raw_data=None 
                 )
