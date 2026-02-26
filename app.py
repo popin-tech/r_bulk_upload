@@ -627,7 +627,7 @@ if app.config.get("ENABLE_FRONTEND", False):
                         data = json.loads(json_str)
                         msg_text = data.get('msg', '')
                         if msg_text:
-                            print(f"[CRON-LOG] {msg_text}", flush=True)
+                            # print(f"[CRON-LOG] {msg_text}", flush=True)
                             logs.append(msg_text)
                     except: pass
 
