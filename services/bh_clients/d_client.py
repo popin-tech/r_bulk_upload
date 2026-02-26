@@ -157,15 +157,19 @@ class DiscoveryClient:
                             continue
                         
                         report_data = r_json.get('data', [])
-                        # Log SUCCESS response ONLY if there is actual data
-                        #if report_data:
-
-                        #logger.info(f"[D-API-Response] Aid {acc_id} Ad {ad_id} (Code {rep_resp.status_code}): {r_json}")
                         if report_data:
-                            print("[OO] if report_data = True]", flush=True)
-                        else:
-                            print("[XX] if report_data = True]", flush=False)
-                        print(f"[D-API-Response] Aid {acc_id} Ad {ad_id} (Code {rep_resp.status_code}): {r_json}", flush=True)
+                            # 簡化日誌輸出，只印出日期與特定指標
+                            simplified_data = {}
+                            if isinstance(report_data, dict):
+                                for k, v in report_data.items():
+                                    simplified_data[k] = {'charge': v.get('charge', 0), 'imp': v.get('imp', 0), 'click': v.get('click', 0)}
+                            elif isinstance(report_data, list):
+                                for v in report_data:
+                                    k = v.get('date', v.get('day', 'unknown'))
+                                    simplified_data[k] = {'charge': v.get('charge', 0), 'imp': v.get('imp', 0), 'click': v.get('click', 0)}
+                            
+                            print(f"[D-API-Response] Aid {acc_id} Ad {ad_id} (Code {rep_resp.status_code}): {simplified_data}", flush=True)
+                        
                         break
                     else:
                         logger.error(f"[D-API-Error] Aid {acc_id} Status {rep_resp.status_code} for Ad {ad_id}: {rep_resp.text}")
