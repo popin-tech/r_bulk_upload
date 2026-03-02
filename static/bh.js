@@ -178,7 +178,7 @@ const app = createApp({
             if (!isDrawerOpen.value || !selectedAccount.value) return;
 
             try {
-                const res = await fetch(`/api/bh/account/${selectedAccount.value.account_id}`, {
+                const res = await fetch(`/api/bh/account/${selectedAccount.value.id}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(selectedAccount.value)

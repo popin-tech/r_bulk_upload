@@ -529,15 +529,15 @@ if app.config.get("ENABLE_FRONTEND", False):
         from flask import stream_with_context
         return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-    @app.route("/api/bh/account/<account_id>", methods=["POST"])
-    def bh_update_account(account_id):
+    @app.route("/api/bh/account/<int:pk_id>", methods=["POST"])
+    def bh_update_account(pk_id):
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
         
         data = request.get_json()
         svc = BHService()
         try:
-            svc.update_account(account_id, data, user.email)
+            svc.update_account(pk_id, data, user.email)
             return jsonify({"status": "ok"})
         except Exception as e:
             return _error(str(e), 500)
@@ -557,7 +557,20 @@ if app.config.get("ENABLE_FRONTEND", False):
         svc = BHSyncService()
         # Capture app context here
         app_obj = current_app._get_current_object()
-        return Response(svc.sync_account_full_range_by_pk(pk_id, app_obj, custom_start, custom_end), mimetype='text/event-stream')
+        
+        # Helper to intercept generator output for logging
+        def stream_with_logging():
+            app_obj.logger.info(f"UI Trigger: Starting Full Sync for Account PK={pk_id} by {user.email}")
+            start_time = time.time()
+            try:
+                for msg in svc.sync_account_full_range_by_pk(pk_id, app_obj, custom_start, custom_end):
+                    yield msg
+                elapsed = time.time() - start_time
+                app_obj.logger.info(f"UI Trigger: Full Sync for PK={pk_id} Completed in {int(elapsed)} seconds.")
+            except Exception as e:
+                app_obj.logger.error(f"UI Trigger: Full Sync for PK={pk_id} Failed: {e}")
+                
+        return Response(stream_with_logging(), mimetype='text/event-stream')
     @app.route("/api/bh/accounts/bulk-status", methods=["POST"])
     def bh_bulk_status():
         user = _require_user()

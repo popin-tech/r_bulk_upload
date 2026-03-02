@@ -431,13 +431,13 @@ class BHService:
         
         return output.getvalue()
 
-    def update_account(self, account_id: str, data: dict, user_email: str) -> bool:
+    def update_account(self, pk_id: int, data: dict, user_email: str) -> bool:
         """
         Update account details.
         """
-        acc = BHAccount.query.filter_by(account_id=account_id).first()
+        acc = BHAccount.query.get(pk_id)
         if not acc:
-            raise ValueError(f"Account {account_id} not found")
+            raise ValueError(f"Account ID {pk_id} not found")
         
         # Update fields
         if 'budget' in data: acc.budget = data['budget']
@@ -470,13 +470,13 @@ class BHService:
         if 'd_token' in data and acc.platform == 'D':
             token_val = str(data['d_token']).strip()
             # Upsert BHDAccountToken
-            d_token = BHDAccountToken.query.filter_by(account_id=account_id).first()
+            d_token = BHDAccountToken.query.filter_by(account_id=acc.account_id).first()
             if d_token:
                 d_token.token = token_val
                 d_token.updated_time = datetime.utcnow()
             else:
                 new_token = BHDAccountToken(
-                    account_id=account_id,
+                    account_id=acc.account_id,
                     account_name=acc.account_name,
                     token=token_val
                 )
