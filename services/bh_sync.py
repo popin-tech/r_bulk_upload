@@ -115,6 +115,7 @@ class BHSyncService:
                                 
                                 # Log daily stats
                                 log_msg = f"  [{target_str}] Spend: {int(stats.get('spend', 0))} | Imp: {stats.get('impressions', 0)} | Click: {stats.get('clicks', 0)} | Conv: {stats.get('conversions', 0)}"
+                                print(f"[BH-FullSync-R] ID:{account_id} {log_msg}", flush=True)
                                 yield f"data: {json.dumps({'msg': log_msg})}\n\n"
                                 
                             yield f"data: {json.dumps({'msg': f'  -> Saved.'})}\n\n"
@@ -154,6 +155,7 @@ class BHSyncService:
 
                                  # Log daily stats
                                  log_msg = f"  [{target_str}] Spend: {int(stats.get('spend', 0))} | Imp: {stats.get('impressions', 0)} | Click: {stats.get('clicks', 0)} | Conv: {stats.get('conversions', 0)}"
+                                 print(f"[BH-FullSync-D] ID:{account_id} {log_msg}", flush=True)
                                  yield f"data: {json.dumps({'msg': log_msg})}\n\n"
                                  
                             yield f"data: {json.dumps({'msg': f'  -> Saved.'})}\n\n"
