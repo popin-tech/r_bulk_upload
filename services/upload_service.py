@@ -217,8 +217,11 @@ def _validate_datetime_format(value: str, excel_row_num: int, field: str) -> str
                 f"Row {excel_row_num}: 欄位「{field}」日期不能超過半年前 ({past_limit.strftime('%Y-%m-%d')})。"
             )
 
+        # 轉為 UTC 時間 (-8 小時) 以符合 API 需求
+        utc_dt = parsed_dt - timedelta(hours=8)
+        
         # Return format with time if present (or 00 if not)
-        return parsed_dt.strftime("%Y-%m-%d %H")
+        return utc_dt.strftime("%Y-%m-%d %H")
 
     # 都不符合 → 拋錯
     raise UploadParsingError(
@@ -637,15 +640,11 @@ def excel_to_campaign_json(df: pd.DataFrame, audience_name_map: Optional[Dict[st
         start_date_raw = row.get("開始日期")
         end_date_raw = row.get("結束日期")
 
-        if not start_date_raw or pd.isna(start_date_raw) or str(start_date_raw).strip() == "":
-            raise UploadParsingError(f"Row {excel_row_num}: 「開始日期」為必填欄位。")
-        else:
+        if start_date_raw and not pd.isna(start_date_raw) and str(start_date_raw).strip() != "":
             start_date = _validate_datetime_format(str(start_date_raw), excel_row_num, "開始日期")
             schedule["start_date"] = start_date
 
-        if not end_date_raw or pd.isna(end_date_raw) or str(end_date_raw).strip() == "":
-            raise UploadParsingError(f"Row {excel_row_num}: 「結束日期」為必填欄位。")
-        else:
+        if end_date_raw and not pd.isna(end_date_raw) and str(end_date_raw).strip() != "":
             end_date = _validate_datetime_format(str(end_date_raw), excel_row_num, "結束日期")
             schedule["end_date"] = end_date
 
