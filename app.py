@@ -37,7 +37,8 @@ app.config["BROADCIEL_API_KEY"] = os.getenv("BROADCIEL_API_KEY", "")
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "20")) * 1024 * 1024
 app.config["ENABLE_FRONTEND"] = os.getenv("ENABLE_FRONTEND", "true").lower() == "true"
 app.config["CRON_SECRET"] = os.getenv("CRON_SECRET", "f6d0f127521aec64a31c2840ac7039f3")
-app.config["LOCAL_DEV"] = os.getenv("LOCAL_DEV", "false").lower() == "true"
+is_cloud_run = "K_SERVICE" in os.environ
+app.config["LOCAL_DEV"] = os.getenv("LOCAL_DEV", str(not is_cloud_run)).lower() == "true"
 
 # Database Config
 # Format: mysql+pymysql://user:password@host:port/dbname
@@ -118,6 +119,8 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         user = _require_user() # This also checks is_active usually via DB search if session invalid
+        if isinstance(user, Response):
+             return user
         # But we need to ensure the role is admin
         auth_info = _is_user_authorized(user.email)
         if not auth_info or auth_info.get("role") != "admin":
@@ -287,7 +290,23 @@ def api_login():
     # 檢查並取得資料庫權限
     auth_data = _is_user_authorized(email)
     if not auth_data:
-        return _error("您的帳號尚未開啟權限或已停用，請聯繫 Admin。", 403)
+        # 特別處理 benson@popin.cc 以免空資料庫無法線上登入
+        if email == "benson@popin.cc":
+            new_user = User(
+                name=user.name or "Benson",
+                email=email,
+                role="admin",
+                is_active=True,
+                access_modules=["cmp", "bh", "media_dashboard"]
+            )
+            db.session.add(new_user)
+            db.session.commit()
+            auth_data = {
+                "role": "admin",
+                "access_modules": ["cmp", "bh", "media_dashboard"]
+            }
+        else:
+            return _error("您的帳號尚未開啟權限或已停用，請聯繫 Admin。", 403)
 
     # Set session
     session["user"] = asdict(user)

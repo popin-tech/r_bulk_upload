@@ -21,7 +21,17 @@ class MediaDashboardService:
 
     def _authenticate(self):
         try:
-            if os.path.exists(self.key_path):
+            import json
+            credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+            if credentials_json:
+                logger.info("Using service account from GOOGLE_CREDENTIALS_JSON environment variable.")
+                try:
+                    info = json.loads(credentials_json)
+                    credentials = Credentials.from_service_account_info(info, scopes=self.scopes)
+                except Exception as e:
+                    logger.error(f"Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
+                    raise
+            elif os.path.exists(self.key_path):
                 credentials = Credentials.from_service_account_file(self.key_path, scopes=self.scopes)
             else:
                 import google.auth

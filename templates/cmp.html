@@ -67,12 +67,16 @@
             </div>
         </div>
 
-        <div class="header-right">
-            <button class="user-profile-btn">
+        <div class="header-right d-flex align-items-center">
+            {% if session.get('user_role') == 'admin' %}
+                <a href="/admin/users" class="btn btn-sm me-2" style="border: 1px solid #f59e0b; color: #f59e0b;"><i class="fas fa-user-shield me-1"></i>系統人員管理</a>
+                <a href="/admin/accounts" class="btn btn-sm me-3" style="border: 1px solid #0ea5e9; color: #0ea5e9;"><i class="fas fa-file-invoice-dollar me-1"></i>CMP帳戶管理</a>
+            {% endif %}
+            <button class="user-profile-btn ms-2">
                 <div class="user-avatar-small">{{ session.get('user', {}).get('name', 'U')[0] }}</div>
                 <span>{{ session.get('user', {}).get('name', 'User') }}</span>
             </button>
-            <button onclick="logout()" class="logout-btn" style="padding: 6px 12px; font-size: 14px;">
+            <button onclick="logout()" class="logout-btn ms-2" style="padding: 6px 12px; font-size: 14px;">
                 Sign Out
             </button>
         </div>
