@@ -322,6 +322,13 @@ def api_logout():
     """Clear Server-side Session."""
     session.clear()
     return jsonify({"status": "ok"})
+
+@app.route("/logout", methods=["GET"])
+def logout():
+    """Clear Session and redirect to home."""
+    session.clear()
+    return redirect(url_for("index"))
+
 @app.route("/api/accounts", methods=["GET"])
 def list_accounts():
     user = _require_user()
