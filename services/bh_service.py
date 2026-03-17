@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func, case
 from sqlalchemy.exc import IntegrityError
-from database import db, BHAccount, BHDailyStats, BHDAccountToken
+from database import db, BHAccount, BHDailyStats, BHDAccountToken, BHAccountAE, User
 import logging
 
 logger = logging.getLogger(__name__)
@@ -145,19 +145,13 @@ class BHService:
                         token_val = str(row['token']).strip()
                         
                     if token_val:
-                        # Check if exists (User Rule: "有這個帳戶的token 就不動作，沒有就insert" -> User ORIGINALLY said this??)
-                        # Wait, User said "欄位 d token 目前有正常更新資料庫嗎？幫我確認"
-                        # This implies they WANT it to update.
-                        # My previous implementation was "insert only" based on some assumption or previous prompt.
-                        # I will change it to UPSERT (Update if exists).
-                        
+                        # Check if exists (User Rule: "有這個帳戶的token 就不動作，沒有就insert")
                         existing_token = BHDAccountToken.query.filter_by(account_id=acc_id).first()
                         if existing_token:
                             # Update if changed
                             if existing_token.token != token_val:
                                 existing_token.token = token_val
                                 existing_token.updated_at = datetime.utcnow()
-                                print(f"[BHService] Updated Token for D-Account {acc_id}")
                         else:
                             # Insert
                             new_token = BHDAccountToken(
@@ -166,7 +160,28 @@ class BHService:
                                 token=token_val
                             )
                             db.session.add(new_token)
-                            print(f"[BHService] Inserted new Token for D-Account {acc_id}")
+
+                # --- AE Mapping Logic (New Requirement) ---
+                ae_names_str = str(row.get('ae_name', '')).strip() if pd.notna(row.get('ae_name')) else ""
+                if ae_names_str:
+                    ae_names = [n.strip() for n in ae_names_str.replace('，', ',').split(',') if n.strip()]
+                    for name in ae_names:
+                        # 根據名稱尋找 User
+                        ae_user = User.query.filter_by(name=name).first()
+                        if ae_user:
+                            # 增量寫入：僅在不存在時 INSERT
+                            existing_mapping = BHAccountAE.query.filter_by(
+                                bh_account_id=account.id, 
+                                ae_email=ae_user.email
+                            ).first()
+                            if not existing_mapping:
+                                new_mapping = BHAccountAE(
+                                    bh_account_id=account.id,
+                                    ae_email=ae_user.email
+                                )
+                                db.session.add(new_mapping)
+                        else:
+                            logger.warning(f"Row {index+2}: AE name '{name}' not found in users table.")
                 # ------------------------------
 
                 results['inserted'] += 1

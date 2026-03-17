@@ -90,6 +90,41 @@ class BHDAccountToken(db.Model):
     created_time = db.Column(db.DateTime, default=datetime.utcnow)
     updated_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class User(db.Model):
+    __tablename__ = 'users'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(100), nullable=True)
+    email = db.Column(db.String(255), unique=True, nullable=False)
+    role = db.Column(db.Enum('admin', 'ae', 'viewer'), nullable=False, default='viewer')
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    access_modules = db.Column(db.JSON, nullable=True, comment='["cmp", "bh", "media_dashboard"]')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'email': self.email,
+            'role': self.role,
+            'is_active': self.is_active,
+            'access_modules': self.access_modules,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+class BHAccountAE(db.Model):
+    __tablename__ = 'bh_account_aes'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    bh_account_id = db.Column(db.Integer, db.ForeignKey('bh_accounts.id', ondelete='CASCADE'), nullable=False)
+    ae_email = db.Column(db.String(255), db.ForeignKey('users.email', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('bh_account_id', 'ae_email', name='idx_unique_mapping'),
+    )
+
 def init_db(app):
     """Initializes the database context."""
     db.init_app(app)
