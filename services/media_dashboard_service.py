@@ -21,10 +21,13 @@ class MediaDashboardService:
 
     def _authenticate(self):
         try:
-            if not os.path.exists(self.key_path):
-                logger.error(f"Service account key not found at {self.key_path}")
-                return
-            credentials = Credentials.from_service_account_file(self.key_path, scopes=self.scopes)
+            if os.path.exists(self.key_path):
+                credentials = Credentials.from_service_account_file(self.key_path, scopes=self.scopes)
+            else:
+                import google.auth
+                logger.info(f"Service account key not found at {self.key_path}, falling back to Application Default Credentials.")
+                credentials, _ = google.auth.default(scopes=self.scopes)
+                
             self.gc = gspread.authorize(credentials)
             logger.info("Successfully authenticated with Google Sheets API.")
         except Exception as e:

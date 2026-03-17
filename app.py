@@ -283,12 +283,16 @@ def api_login():
         return _error(str(exc), 401)
 
     email = (user.email or "").lower()
-    allowed_emails = _load_allowed_emails()
-    if email not in allowed_emails:
-        return _error("You are not authorized to use this app.", 403)
+    
+    # 檢查並取得資料庫權限
+    auth_data = _is_user_authorized(email)
+    if not auth_data:
+        return _error("您的帳號尚未開啟權限或已停用，請聯繫 Admin。", 403)
 
     # Set session
     session["user"] = asdict(user)
+    session["user_role"] = auth_data["role"]
+    session["access_modules"] = auth_data["access_modules"]
     session.permanent = True  # Use permanent session (default 31 days)
     
     return jsonify({"status": "ok", "user": asdict(user)})
