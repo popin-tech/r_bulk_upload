@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Native 廣告表現 Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link href="{{ url_for('static', filename='shared.css') }}" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* 改為深色背景對齊其餘模組 */
+            color: #f8fafc;
+        }
+
+        .workspace-container {
+            padding: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+        }
+
+        .overview-card {
+            border: none;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1.5rem;
+            height: 100%;
+            border-left: 4px solid #3b82f6;
+            transition: transform 0.2s;
+        }
+
+        .overview-card:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .overview-label {
+            font-size: 0.8125rem;
+            color: rgba(248, 250, 252, 0.6);
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .overview-value {
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: #f8fafc;
+            margin-top: 0.5rem;
+        }
+
+        .media-block {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .media-title {
+            font-weight: 800;
+            color: #f8fafc;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .rank-badge {
+            background: #ef4444;
+            color: #fff;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 800;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+        }
+
+        .stats-table th {
+            color: rgba(248, 250, 252, 0.6);
+            font-weight: 600;
+            background-color: transparent !important;
+            font-size: 0.875rem;
+        }
+
+        .stats-table td {
+            font-weight: 600;
+            vertical-align: middle;
+            color: #f8fafc;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            background-color: transparent !important;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.9);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        /* Launcher 補習 CSS */
+        .launcher-menu {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header class="app-header">
+        <div class="header-left">
+            <div class="app-launcher-container">
+                <button class="launcher-btn" onclick="toggleLauncher()" title="Switch App">
+                    <i class="bi bi-grid-3x3-gap"></i>
+                </button>
+                <div id="app-launcher-menu" class="launcher-menu">
+                    <a href="/cmp" class="launcher-item">
+                        <div class="launcher-icon"><i class="fas fa-layer-group"></i></div>
+                        <span>CMP</span>
+                    </a>
+                    <a href="/bh" class="launcher-item">
+                        <div class="launcher-icon"><i class="fas fa-chart-line"></i></div>
+                        <span>Budget Hunter</span>
+                    </a>
+                    <a href="/media" class="launcher-item">
+                        <div class="launcher-icon"><i class="fas fa-chart-pie"></i></div>
+                        <span>Media Dashboard</span>
+                    </a>
+                    {% if session.get('user_role') == 'admin' %}
+                    <div class="launcher-divider" style="height: 1px; background: rgba(255,255,255,0.1); margin: 8px 0;"></div>
+                    <a href="/admin/users" class="launcher-item">
+                        <div class="launcher-icon text-warning"><i class="fas fa-user-shield"></i></div>
+                        <span class="text-warning">User Management</span>
+                    </a>
+                    <a href="/admin/accounts" class="launcher-item">
+                        <div class="launcher-icon text-info"><i class="fas fa-file-invoice-dollar"></i></div>
+                        <span class="text-info">CMP Accounts</span>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="brand-divider"></div>
+
+            <div class="app-brand">
+                <div class="logo-container">
+                    <i class="fas fa-chart-pie me-2 text-primary"></i>
+                </div>
+                <span class="brand-name">Native Media Dashboard</span>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <button class="user-profile-btn">
+                <div class="user-avatar-small">{{ session.get('user', {}).get('name', 'U')[0] }}</div>
+                <span>{{ session.get('user', {}).get('name', 'User') }}</span>
+            </button>
+            <button onclick="logout()" class="logout-btn" style="padding: 6px 12px; font-size: 14px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 6px;">
+                Sign Out
+            </button>
+        </div>
+    </header>
+
+    <div class="workspace-container">
+
+        <!-- Header & Controls -->
+        <div class="d-flex justify-content-between align-items-end mb-4 flex-wrap gap-3">
+            <div>
+                <h1 class="fw-bold mb-1">整體表現總覽</h1>
+                <p class="text-muted mb-0" id="date-range-display">載入中...</p>
+            </div>
+            <div class="d-flex gap-2">
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="fas fa-calendar-alt"></i></span>
+                    <input type="date" id="start_date" class="form-control" title="開始日期">
+                    <span class="input-group-text bg-white">至</span>
+                    <input type="date" id="end_date" class="form-control" title="結束日期">
+                    <button class="btn btn-primary" onclick="loadDashboard()">套用</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="error-message" class="alert alert-danger d-none" role="alert" style="background: rgba(220, 38, 38, 0.2); border: 1px solid #ef4444; color: #f8fafc;"></div>
+
+        <!-- Overview Cards (6 metrics) -->
+        <div class="row g-4 mb-5" id="overview-container">
+            <!-- Rendered by JS -->
+        </div>
+
+        <!-- Top 5 Media Listings -->
+        <h2 class="fw-bold mb-4" style="color: #f8fafc;">Top 5 媒體成效分析</h2>
+        <div id="media-container">
+            <!-- Rendered by JS -->
+        </div>
+
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="loading-overlay">
+        <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+        <h5 class="text-primary fw-bold">彙整數據中，請稍候...</h5>
+    </div>
+
+    <script>
+        function toggleLauncher() {
+            const menu = document.getElementById('app-launcher-menu');
+            const btn = document.querySelector('.launcher-btn');
+            menu.classList.toggle('show');
+            btn.classList.toggle('active');
+        }
+
+        // Close launcher when clicking outside
+        document.addEventListener('click', (e) => {
+            const container = document.querySelector('.app-launcher-container');
+            const menu = document.getElementById('app-launcher-menu');
+            const btn = document.querySelector('.launcher-btn');
+            if (container && !container.contains(e.target)) {
+                menu.classList.remove('show');
+                btn.classList.remove('active');
+            }
+        });
+
+        // Global chart instances tracking
+        const chartInstances = {};
+
+        function formatNumber(num) {
+            return new Intl.NumberFormat('en-US').format(Math.round(num));
+        }
+
+        function formatCurrency(num) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(num);
+        }
+
+        async function loadDashboard() {
+            const loading = document.getElementById('loading');
+            const errorMsg = document.getElementById('error-message');
+
+            loading.classList.remove('d-none');
+            errorMsg.classList.add('d-none');
+
+            const startDate = document.getElementById('start_date').value;
+            const endDate = document.getElementById('end_date').value;
+
+            let url = '/api/media/dashboard';
+            const params = new URLSearchParams();
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            if (params.toString()) url += '?' + params.toString();
+
+            try {
+                const res = await fetch(url);
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) {
+                        window.location.href = '/'; return;
+                    }
+                    throw new Error(`API Error: ${res.status}`);
+                }
+                const result = await res.json();
+                if (result.status !== 'ok') throw new Error(result.error);
+
+                renderDashboard(result.data);
+
+            } catch (error) {
+                console.error('Fetch error:', error);
+                errorMsg.textContent = '載入失敗: ' + error.message;
+                errorMsg.classList.remove('d-none');
+            } finally {
+                loading.classList.add('d-none');
+            }
+        }
+
+        function renderDashboard(data) {
+            if (!data || !data.overview || !data.overview.date_range) {
+                document.getElementById('error-message').innerText = "查無資料，請更換日期區間。";
+                document.getElementById('error-message').classList.remove('d-none');
+                document.getElementById('overview-container').innerHTML = '';
+                document.getElementById('media-container').innerHTML = '';
+                return;
+            }
+
+            // Update Header & Inputs (If initial load)
+            document.getElementById('date-range-display').innerText = `資料區間: ${data.overview.date_range}`;
+            if (!document.getElementById('start_date').value) {
+                document.getElementById('start_date').value = data.overview.start_date;
+                document.getElementById('end_date').value = data.overview.end_date;
+            }
+
+            // Render 6 Overview Cards
+            const overview = data.overview;
+            const overviewHtml = `
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="overview-card" style="border-left-color: #3b82f6;">
+                    <div class="overview-label">廣告 Imp</div>
+                    <div class="overview-value">${formatNumber(overview.imp)}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="overview-card" style="border-left-color: #8b5cf6;">
+                    <div class="overview-label">點擊次數</div>
+                    <div class="overview-value">${formatNumber(overview.click)}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="overview-card" style="border-left-color: #f59e0b;">
+                    <div class="overview-label">整體 CPM</div>
+                    <div class="overview-value text-warning">NT$ ${overview.cpm}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="overview-card" style="border-left-color: #10b981;">
+                    <div class="overview-label">整體 CTR</div>
+                    <div class="overview-value text-success">${overview.ctr}%</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="overview-card" style="border-left-color: #ec4899;">
+                    <div class="overview-label">媒體收益</div>
+                    <div class="overview-value">${formatCurrency(overview.media_rev)}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="overview-card" style="border-left-color: #14b8a6;">
+                    <div class="overview-label">博英利潤</div>
+                    <div class="overview-value">${formatCurrency(overview.popin_profit)}</div>
+                </div>
+            </div>
+        `;
+            document.getElementById('overview-container').innerHTML = overviewHtml;
+
+            // Clean old charts memory
+            Object.keys(chartInstances).forEach(id => chartInstances[id].destroy());
+
+            // Render Top 5 Media Sections
+            const mediaContainer = document.getElementById('media-container');
+            mediaContainer.innerHTML = '';
+
+            data.top_5_media.forEach((media, index) => {
+                const chartCanvasId = `chart-media-${index}`;
+                const summary = media.summary;
+
+                const html = `
+                <div class="media-block">
+                    <div class="media-title mb-4">
+                        <span class="rank-badge">#${index + 1}</span>
+                        ${media.media_name}
+                    </div>
+                    <div class="row align-items-center">
+                        <div class="col-lg-8 mb-4 mb-lg-0">
+                            <div class="chart-container">
+                                <canvas id="${chartCanvasId}"></canvas>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="glass-panel border-0 shadow-sm" style="background: rgba(255, 255, 255, 0.05);">
+                                <div class="card-body p-0">
+                                    <table class="table table-borderless table-hover stats-table mb-0">
+                                        <tbody>
+                                            <tr>
+                                                <th class="ps-4 rounded-top-start" width="40%">廣告 Imp</th>
+                                                <td class="text-end pe-4">${formatNumber(summary.imp)}</td>
+                                            </tr>
+                                            <tr>
+                                                <th class="ps-4">與點擊次數</th>
+                                                <td class="text-end pe-4">${formatNumber(summary.click)}</td>
+                                            </tr>
+                                            <tr>
+                                                <th class="ps-4">期間 CPM</th>
+                                                <td class="text-end pe-4 text-warning">NT$ ${summary.cpm}</td>
+                                            </tr>
+                                            <tr>
+                                                <th class="ps-4">期間 CTR</th>
+                                                <td class="text-end pe-4 text-success">${summary.ctr}%</td>
+                                            </tr>
+                                            <tr>
+                                                <th class="ps-4">媒體收益</th>
+                                                <td class="text-end pe-4 text-primary">${formatCurrency(summary.media_rev)}</td>
+                                            </tr>
+                                            <tr>
+                                                <th class="ps-4 rounded-bottom-start">博英利潤</th>
+                                                <td class="text-end pe-4 text-info">${formatCurrency(summary.popin_profit)}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+                mediaContainer.insertAdjacentHTML('beforeend', html);
+
+                // Draw Chart.js Line Chart
+                const ctx = document.getElementById(chartCanvasId).getContext('2d');
+                chartInstances[chartCanvasId] = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: media.timeline.labels,
+                        datasets: [
+                            {
+                                label: '廣告 Imp',
+                                data: media.timeline.imp,
+                                borderColor: '#3b82f6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                borderWidth: 2,
+                                tension: 0.3,
+                                fill: true,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: '點擊次數',
+                                data: media.timeline.click,
+                                borderColor: '#8b5cf6',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                tension: 0.3,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)' }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                                ticks: { color: 'rgba(248, 250, 252, 0.6)' }
+                            },
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: { display: true, text: 'Impression', color: 'rgba(248, 250, 252, 0.8)' },
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                                ticks: { color: 'rgba(248, 250, 252, 0.6)' }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                grid: { drawOnChartArea: false },
+                                title: { display: true, text: 'Clicks', color: 'rgba(248, 250, 252, 0.8)' },
+                                ticks: { color: 'rgba(248, 250, 252, 0.6)' }
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                window.location.href = '/';
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadDashboard);
+    </script>
+
+</body>
+
+</html>

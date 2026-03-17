@@ -54,6 +54,9 @@ const app = createApp({
         const customSyncStartDate = ref('');
         const customSyncEndDate = ref('');
 
+        const allAEs = ref([]); // All users with role 'ae' or 'admin' 
+        const selectedAccountAEs = ref([]); // Emails of AEs assigned to current account
+
         // --- Computed ---
         const isAllSelected = computed(() => {
             return accounts.value.length > 0 && selectedAccountIds.value.length === accounts.value.length;
@@ -130,6 +133,41 @@ const app = createApp({
             customSyncEndDate.value = yesterdayStr;
 
             loadDailyStats(account.id);
+            loadAccountAEs(account.id);
+        };
+
+        const loadAccountAEs = async (accId) => {
+            try {
+                const res = await fetch(`/api/bh/account/${accId}/aes`);
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    selectedAccountAEs.value = data.ae_emails;
+                }
+            } catch (e) {
+                console.error('Failed to load account AEs', e);
+            }
+        };
+
+        const loadAllAEs = async () => {
+            try {
+                const res = await fetch('/api/admin/users');
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    // Filter to only AE or Admin roles
+                    allAEs.value = data.users.filter(u => u.role === 'ae' || u.role === 'admin' || u.role === 'viewer'); 
+                }
+            } catch (e) {
+                console.error('Failed to load all users', e);
+            }
+        };
+
+        const toggleAEAssignment = (email) => {
+            const idx = selectedAccountAEs.value.indexOf(email);
+            if (idx > -1) {
+                selectedAccountAEs.value.splice(idx, 1);
+            } else {
+                selectedAccountAEs.value.push(email);
+            }
         };
 
         const closeSyncModal = () => {
@@ -178,10 +216,16 @@ const app = createApp({
             if (!isDrawerOpen.value || !selectedAccount.value) return;
 
             try {
+                // Prepare update payload
+                const payload = {
+                    ...selectedAccount.value,
+                    ae_emails: selectedAccountAEs.value
+                };
+
                 const res = await fetch(`/api/bh/account/${selectedAccount.value.id}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(selectedAccount.value)
+                    body: JSON.stringify(payload)
                 });
                 const data = await res.json();
                 if (data.status === 'ok') {
@@ -393,8 +437,8 @@ const app = createApp({
         // --- Lifecycle ---
 
         onMounted(() => {
-
             loadAccounts();
+            loadAllAEs();
         });
 
         return {
@@ -411,6 +455,9 @@ const app = createApp({
             syncLogs,
             dailyStats,
             isStatsLoading,
+            allAEs,
+            selectedAccountAEs,
+            toggleAEAssignment,
 
             loadAccounts,
             onSearchInput,

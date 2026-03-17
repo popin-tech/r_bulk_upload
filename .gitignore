@@ -8,3 +8,4 @@ services/__pycache__/
 instance/
 *.pem
 !server-ca.pem
+config/service_account.json

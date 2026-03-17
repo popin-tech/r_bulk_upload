@@ -38,6 +38,21 @@
                         <div class="launcher-icon"><i class="fas fa-chart-line"></i></div>
                         <span>Budget Hunter</span>
                     </a>
+                    <a href="/media" class="launcher-item">
+                        <div class="launcher-icon"><i class="fas fa-chart-pie"></i></div>
+                        <span>Media Dashboard</span>
+                    </a>
+                    {% if session.get('user_role') == 'admin' %}
+                    <div class="launcher-divider" style="height: 1px; background: rgba(255,255,255,0.1); margin: 8px 0;"></div>
+                    <a href="/admin/users" class="launcher-item">
+                        <div class="launcher-icon text-warning"><i class="fas fa-user-shield"></i></div>
+                        <span class="text-warning">User Management</span>
+                    </a>
+                    <a href="/admin/accounts" class="launcher-item">
+                        <div class="launcher-icon text-info"><i class="fas fa-file-invoice-dollar"></i></div>
+                        <span class="text-info">CMP Accounts</span>
+                    </a>
+                    {% endif %}
                 </div>
             </div>
 

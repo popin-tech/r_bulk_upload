@@ -50,6 +50,21 @@
                         <div class="launcher-icon"><i class="fas fa-chart-line"></i></div>
                         <span>Budget Hunter</span>
                     </a>
+                    <a href="/media" class="launcher-item">
+                        <div class="launcher-icon"><i class="fas fa-chart-pie"></i></div>
+                        <span>Media Dashboard</span>
+                    </a>
+                    {% if session.get('user_role') == 'admin' %}
+                    <div class="launcher-divider" style="height: 1px; background: rgba(255,255,255,0.1); margin: 8px 0;"></div>
+                    <a href="/admin/users" class="launcher-item">
+                        <div class="launcher-icon text-warning"><i class="fas fa-user-shield"></i></div>
+                        <span class="text-warning">User Management</span>
+                    </a>
+                    <a href="/admin/accounts" class="launcher-item">
+                        <div class="launcher-icon text-info"><i class="fas fa-file-invoice-dollar"></i></div>
+                        <span class="text-info">CMP Accounts</span>
+                    </a>
+                    {% endif %}
                 </div>
             </div>
 
@@ -321,6 +336,22 @@
                                         <label class="form-label text-white small">D Token</label>
                                         <input type="text" class="form-control glass-input"
                                             v-model="selectedAccount.d_token" placeholder="Enter Token">
+                                    </div>
+                                </div>
+
+                                <!-- AE Assignment -->
+                                <div class="row mb-4">
+                                    <div class="col-12">
+                                        <label class="form-label text-white small">Assigned AEs</label>
+                                        <div class="d-flex flex-wrap gap-2 mt-1">
+                                            <span v-for="ae in allAEs" :key="ae.email" 
+                                                  class="badge cursor-pointer p-2" 
+                                                  :style="selectedAccountAEs.includes(ae.email) ? 'background: #3b82f6;' : 'background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); opacity: 0.6;'"
+                                                  @click="toggleAEAssignment(ae.email)">
+                                                <i class="fas" :class="selectedAccountAEs.includes(ae.email) ? 'fa-check-circle me-1' : 'fa-plus-circle me-1'"></i>
+                                                [[ ae.name || ae.email.split('@')[0] ]]
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
 

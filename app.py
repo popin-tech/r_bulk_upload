@@ -17,7 +17,9 @@ from services.upload_service import UploadParsingError, parse_excel, parse_excel
 from services.campaign_bulk_processor import CampaignBulkProcessor
 from services.bh_service import BHService
 from services.bh_sync import BHSyncService
-from database import db, init_db
+from services.media_dashboard_service import MediaDashboardService
+from functools import wraps
+from database import db, init_db, BHAccount, BHDailyStats, User, BHAccountAE, BHDAccountToken
 
 app = Flask(__name__)
 
@@ -35,6 +37,7 @@ app.config["BROADCIEL_API_KEY"] = os.getenv("BROADCIEL_API_KEY", "")
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "20")) * 1024 * 1024
 app.config["ENABLE_FRONTEND"] = os.getenv("ENABLE_FRONTEND", "true").lower() == "true"
 app.config["CRON_SECRET"] = os.getenv("CRON_SECRET", "f6d0f127521aec64a31c2840ac7039f3")
+app.config["LOCAL_DEV"] = os.getenv("LOCAL_DEV", "false").lower() == "true"
 
 # Database Config
 # Format: mysql+pymysql://user:password@host:port/dbname
@@ -99,27 +102,28 @@ def _load_accounts() -> list[dict[str, Any]]:
     app.logger.info("Loaded %d accounts from %s", len(_ACCOUNTS_CACHE), json_path)
     return _ACCOUNTS_CACHE
 
-def _load_allowed_emails() -> set[str]:
-    """Load allowed user emails from static/allowed_emails.json once and cache them."""
-    global _ALLOWED_EMAILS_CACHE
+def _is_user_authorized(email: str) -> dict | None:
+    """從資料庫檢查使用者是否存在且啟用，並回傳角色與權限"""
+    if not email:
+        return None
+    user = User.query.filter_by(email=email.lower()).first()
+    if user and user.is_active:
+        return {
+            "role": user.role,
+            "access_modules": user.access_modules or []
+        }
+    return None
 
-    if _ALLOWED_EMAILS_CACHE is not None:
-        return _ALLOWED_EMAILS_CACHE
-
-    json_path = CONFIG_DIR / "allowed_emails.json"
-    if not json_path.exists():
-        app.logger.warning("allowed_emails.json not found in config folder: %s", json_path)
-        _ALLOWED_EMAILS_CACHE = set()
-        return _ALLOWED_EMAILS_CACHE
-
-    with json_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    # Expecting: ["email1@example.com", "email2@example.com", ...]
-    emails = {str(e).lower() for e in data if e}
-    _ALLOWED_EMAILS_CACHE = emails
-    app.logger.info("Loaded %d allowed emails from %s", len(emails), json_path)
-    return _ALLOWED_EMAILS_CACHE
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = _require_user() # This also checks is_active usually via DB search if session invalid
+        # But we need to ensure the role is admin
+        auth_info = _is_user_authorized(user.email)
+        if not auth_info or auth_info.get("role") != "admin":
+            return render_template("login.html", error="Only admins can access this page."), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def _get_token_for_email(email: str) -> str | None:
@@ -136,7 +140,31 @@ def _get_token_from_header() -> str:
     return ""
 
 
-def _require_user() -> GoogleUser:
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = _require_user()
+        if isinstance(user, Response):
+            return user
+        return f(*args, **kwargs)
+    return decorated_function
+
+def _require_user() -> GoogleUser | Response:
+    # 0. Bypass for Local Development
+    if app.config.get("LOCAL_DEV"):
+        dev_email = "benson@popin.cc"
+        auth_data = _is_user_authorized(dev_email)
+        if auth_data:
+            session["user_role"] = auth_data["role"]
+            session["access_modules"] = auth_data["access_modules"]
+            
+        return GoogleUser(
+            email=dev_email,
+            name="Local Dev User",
+            sub="mock-sub-123",
+            picture=""
+        )
+
     # 1. Check Flask Session first
     if "user" in session:
         user_data = session["user"]
@@ -159,9 +187,13 @@ def _require_user() -> GoogleUser:
         return _error(str(exc), 401)
 
     email = (user.email or "").lower()
-    allowed_emails = _load_allowed_emails()
-    if email not in allowed_emails:
-        return _error("You are not authorized to use this app.", 403)
+    auth_data = _is_user_authorized(email)
+    if not auth_data:
+        return _error("您的帳號尚未開啟權限或已停用，請聯繫 Admin。", 403)
+    
+    # 將重要權限存入 session
+    session["user_role"] = auth_data["role"]
+    session["access_modules"] = auth_data["access_modules"]
     
     return user
 
@@ -185,6 +217,56 @@ def _error(message: str, status: int):
     response = jsonify({"error": message})
     response.status_code = status
     return response
+
+@app.route("/api/bh/account/<int:id>", methods=["POST"])
+@login_required
+def bh_update_account(id):
+    data = request.json
+    acc = BHAccount.query.get(id)
+    if not acc:
+        return jsonify({"status": "error", "message": "Account not found"}), 404
+    
+    # Update main fields
+    if "budget" in data: acc.budget = data["budget"]
+    if "start_date" in data: acc.start_date = data["start_date"]
+    if "end_date" in data: acc.end_date = data["end_date"]
+    if "agent" in data: acc.agent = data["agent"]
+    if "cpc_goal" in data: acc.cpc_goal = data["cpc_goal"]
+    if "cpa_goal" in data: acc.cpa_goal = data["cpa_goal"]
+    if "ctr_goal" in data: acc.ctr_goal = data["ctr_goal"]
+    if "d_token" in data:
+         # Need to find and update in BHDAccountToken
+         from database import BHDAccountToken
+         token_rec = BHDAccountToken.query.filter_by(account_id=acc.account_id).first()
+         if token_rec:
+             token_rec.token = data["d_token"]
+         else:
+             new_token = BHDAccountToken(
+                 account_id=acc.account_id,
+                 account_name=acc.account_name,
+                 token=data["d_token"]
+             )
+             db.session.add(new_token)
+
+    # --- Sync AE Associations ---
+    if "ae_emails" in data:
+        new_emails = set(data["ae_emails"])
+        # Remove old ones not in new list
+        BHAccountAE.query.filter_by(bh_account_id=id).filter(~BHAccountAE.ae_email.in_(new_emails)).delete(synchronize_session=False)
+        # Add new ones
+        existing_emails = {r.ae_email for r in BHAccountAE.query.filter_by(bh_account_id=id).all()}
+        for email in new_emails:
+            if email not in existing_emails:
+                db.session.add(BHAccountAE(bh_account_id=id, ae_email=email))
+    
+    db.session.commit()
+    return jsonify({"status": "ok"})
+
+@app.route("/api/bh/account/<int:id>/aes", methods=["GET"])
+@login_required
+def get_bh_account_aes(id):
+    mappings = BHAccountAE.query.filter_by(bh_account_id=id).all()
+    return jsonify({"status": "ok", "ae_emails": [m.ae_email for m in mappings]})
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
@@ -425,6 +507,17 @@ def commit():
 if app.config.get("ENABLE_FRONTEND", False):
     @app.route("/")
     def index():
+        # Inject Mock Session for Local Development
+        if app.config.get("LOCAL_DEV"):
+            session["user"] = {
+                "email": "benson@popin.cc",
+                "name": "Local Dev User",
+                "sub": "mock-sub-123",
+                "picture": ""
+            }
+            session.permanent = True
+            return redirect(url_for("media_index")) # 預設導向其中一個 Dashboard，例如 media
+            
         # Do NOT send account_emails to the template anymore
         return render_template("login.html")
 
@@ -443,6 +536,119 @@ if app.config.get("ENABLE_FRONTEND", False):
         if "user" not in session:
             return redirect(url_for("index"))
         return render_template("bh.html")
+
+    @app.route("/media")
+    def media_index():
+        if "user" not in session:
+            return redirect(url_for("index"))
+        return render_template("media_dashboard.html")
+
+    # ==========================================
+    # Admin Interface & User Management
+    # ==========================================
+
+    @app.route("/admin/users")
+    @admin_required
+    def admin_users_page():
+        return render_template("admin_users.html")
+
+    @app.route("/api/admin/users", methods=["GET"])
+    @admin_required
+    def get_admin_users():
+        users = User.query.all()
+        return jsonify({"status": "ok", "users": [u.to_dict() for u in users]})
+
+    @app.route("/api/admin/users", methods=["POST"])
+    @admin_required
+    def create_admin_user():
+        data = request.json
+        email = data.get("email", "").lower().strip()
+        if not email:
+            return jsonify({"status": "error", "message": "Email is required"}), 400
+        
+        existing = User.query.filter_by(email=email).first()
+        if existing:
+            return jsonify({"status": "error", "message": "User already exists"}), 400
+        
+        new_user = User(
+            name=data.get("name"),
+            email=email,
+            role=data.get("role", "viewer"),
+            is_active=data.get("is_active", True),
+            access_modules=data.get("access_modules", ["cmp", "bh", "media_dashboard"])
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        return jsonify({"status": "ok", "user": new_user.to_dict()})
+
+    @app.route("/api/admin/users/<int:user_id>", methods=["PUT"])
+    @admin_required
+    def update_admin_user(user_id):
+        data = request.json
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"status": "error", "message": "User not found"}), 404
+        
+        if "name" in data: user.name = data["name"]
+        if "role" in data: user.role = data["role"]
+        if "is_active" in data: user.is_active = data["is_active"]
+        if "access_modules" in data: user.access_modules = data["access_modules"]
+        
+        db.session.commit()
+        return jsonify({"status": "ok", "user": user.to_dict()})
+
+    @app.route("/admin/accounts")
+    @admin_required
+    def admin_accounts_page():
+        return render_template("admin_accounts.html")
+
+    @app.route("/api/admin/accounts", methods=["GET"])
+    @admin_required
+    def get_admin_accounts():
+        json_path = CONFIG_DIR / "account.json"
+        if not json_path.exists():
+            return jsonify({"status": "ok", "accounts": []})
+        with json_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return jsonify({"status": "ok", "accounts": data})
+
+    @app.route("/api/admin/accounts", methods=["POST"])
+    @admin_required
+    def save_admin_accounts():
+        data = request.json
+        if not isinstance(data, list):
+            return jsonify({"status": "error", "message": "Expected a list of accounts"}), 400
+        
+        json_path = CONFIG_DIR / "account.json"
+        with json_path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+            
+        global _ACCOUNTS_CACHE
+        _ACCOUNTS_CACHE = None
+        _load_accounts()
+        
+        return jsonify({"status": "ok"})
+
+    # ------------------------------------------
+    # --- Media Dashboard APIs ---
+    @app.route("/api/media/dashboard", methods=["GET"])
+    def get_media_dashboard():
+        user = _require_user()
+        if not isinstance(user, GoogleUser): 
+            return user
+            
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+            
+        try:
+            svc = MediaDashboardService()
+            data = svc.get_dashboard_data(start_date, end_date)
+            if "error" in data:
+                 return _error(data["error"], 400)
+            return jsonify({"status": "ok", "data": data})
+        except Exception as e:
+            app.logger.error(f"Media Dashboard API Error: {str(e)}")
+            return _error(f"無法取得 Dashboard 資料: {str(e)}", 500)
 
     # --- Budget Hunter APIs ---
     
@@ -529,18 +735,6 @@ if app.config.get("ENABLE_FRONTEND", False):
         from flask import stream_with_context
         return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-    @app.route("/api/bh/account/<int:pk_id>", methods=["POST"])
-    def bh_update_account(pk_id):
-        user = _require_user()
-        if not isinstance(user, GoogleUser): return user
-        
-        data = request.get_json()
-        svc = BHService()
-        try:
-            svc.update_account(pk_id, data, user.email)
-            return jsonify({"status": "ok"})
-        except Exception as e:
-            return _error(str(e), 500)
 
     @app.route("/api/bh/account_pk/<int:pk_id>/sync_full", methods=["GET"])
     def bh_account_full_sync(pk_id):
@@ -704,5 +898,4 @@ def versioned_url_for(endpoint, **values):
     return url_for(endpoint, **values)
 
 if __name__ == "__main__":
-    init_db(app)
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    app.run(host="0.0.0.0", port=5001, debug=True)
