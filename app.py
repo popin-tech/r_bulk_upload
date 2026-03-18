@@ -17,7 +17,7 @@ from services.upload_service import UploadParsingError, parse_excel, parse_excel
 from services.campaign_bulk_processor import CampaignBulkProcessor
 from services.bh_service import BHService
 from services.bh_sync import BHSyncService
-from services.media_dashboard_service import MediaDashboardService
+from services.media_service import MediaService
 from functools import wraps
 from database import db, init_db, BHAccount, BHDailyStats, User, BHAccountAE, BHDAccountToken
 
@@ -128,6 +128,37 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def module_required(module_name: str):
+    """
+    Ensure the user has access to the specified module.
+    Checks session["access_modules"].
+    If unauthorized, redirects to the access_denied page for HTML requests,
+    or returns 403 JSON for API requests.
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            user = _require_user()
+            if isinstance(user, Response):
+                return user
+            
+            access_modules = session.get("access_modules", [])
+            if module_name not in access_modules:
+                # API requests usually accept JSON
+                if request.path.startswith("/api/"):
+                    return _error(f"無存取權限: 需要 {module_name} 模組權限", 403)
+                
+                # HTML template pages
+                return render_template(
+                    "access_denied.html", 
+                    module=module_name, 
+                    email=(user.email or "Unknown")
+                ), 403
+                
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
 
 def _get_token_for_email(email: str) -> str | None:
     """Lookup Broadciel token by account email from account.json."""
@@ -222,7 +253,7 @@ def _error(message: str, status: int):
     return response
 
 @app.route("/api/bh/account/<int:id>", methods=["POST"])
-@login_required
+@module_required("bh")
 def bh_update_account(id):
     data = request.json
     acc = BHAccount.query.get(id)
@@ -266,7 +297,7 @@ def bh_update_account(id):
     return jsonify({"status": "ok"})
 
 @app.route("/api/bh/account/<int:id>/aes", methods=["GET"])
-@login_required
+@module_required("bh")
 def get_bh_account_aes(id):
     mappings = BHAccountAE.query.filter_by(bh_account_id=id).all()
     return jsonify({"status": "ok", "ae_emails": [m.ae_email for m in mappings]})
@@ -297,13 +328,13 @@ def api_login():
                 email=email,
                 role="admin",
                 is_active=True,
-                access_modules=["cmp", "bh", "media_dashboard"]
+                access_modules=["cmp", "bh", "media"]
             )
             db.session.add(new_user)
             db.session.commit()
             auth_data = {
                 "role": "admin",
-                "access_modules": ["cmp", "bh", "media_dashboard"]
+                "access_modules": ["cmp", "bh", "media"]
             }
         else:
             return _error("您的帳號尚未開啟權限或已停用，請聯繫 Admin。", 403)
@@ -556,22 +587,25 @@ if app.config.get("ENABLE_FRONTEND", False):
     #    return render_template("login.html")
 
     @app.route("/cmp")
+    @module_required("cmp")
     def cmp():
         if "user" not in session:
             return redirect(url_for("index"))
         return render_template("cmp.html")
 
     @app.route("/bh")
+    @module_required("bh")
     def bh_index():
         if "user" not in session:
             return redirect(url_for("index"))
         return render_template("bh.html")
 
     @app.route("/media")
+    @module_required("media")
     def media_index():
         if "user" not in session:
             return redirect(url_for("index"))
-        return render_template("media_dashboard.html")
+        return render_template("media.html")
 
     # ==========================================
     # Admin Interface & User Management
@@ -605,7 +639,7 @@ if app.config.get("ENABLE_FRONTEND", False):
             email=email,
             role=data.get("role", "viewer"),
             is_active=data.get("is_active", True),
-            access_modules=data.get("access_modules", ["cmp", "bh", "media_dashboard"])
+            access_modules=data.get("access_modules", ["cmp", "bh", "media"])
         )
         db.session.add(new_user)
         db.session.commit()
@@ -662,6 +696,7 @@ if app.config.get("ENABLE_FRONTEND", False):
     # ------------------------------------------
     # --- Media Dashboard APIs ---
     @app.route("/api/media/dashboard", methods=["GET"])
+    @module_required("media")
     def get_media_dashboard():
         user = _require_user()
         if not isinstance(user, GoogleUser): 
@@ -671,7 +706,7 @@ if app.config.get("ENABLE_FRONTEND", False):
         end_date = request.args.get("end_date")
             
         try:
-            svc = MediaDashboardService()
+            svc = MediaService()
             data = svc.get_dashboard_data(start_date, end_date)
             if "error" in data:
                  return _error(data["error"], 400)
@@ -683,6 +718,7 @@ if app.config.get("ENABLE_FRONTEND", False):
     # --- Budget Hunter APIs ---
     
     @app.route("/api/bh/upload", methods=["POST"])
+    @module_required("bh")
     def bh_upload():
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
@@ -699,6 +735,7 @@ if app.config.get("ENABLE_FRONTEND", False):
             return _error(str(e), 500)
 
     @app.route("/api/bh/accounts", methods=["GET"])
+    @module_required("bh")
     def bh_list_accounts():
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
@@ -724,6 +761,7 @@ if app.config.get("ENABLE_FRONTEND", False):
 
 
     @app.route("/api/bh/download", methods=["POST"])
+    @module_required("bh")
     def bh_download():
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
@@ -751,6 +789,7 @@ if app.config.get("ENABLE_FRONTEND", False):
             return _error(str(e), 500)
 
     @app.route("/api/bh/sync", methods=["GET"])
+    @module_required("bh")
     def bh_sync():
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
@@ -767,6 +806,7 @@ if app.config.get("ENABLE_FRONTEND", False):
 
 
     @app.route("/api/bh/account_pk/<int:pk_id>/sync_full", methods=["GET"])
+    @module_required("bh")
     def bh_account_full_sync(pk_id):
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
@@ -796,6 +836,7 @@ if app.config.get("ENABLE_FRONTEND", False):
                 
         return Response(stream_with_logging(), mimetype='text/event-stream')
     @app.route("/api/bh/accounts/bulk-status", methods=["POST"])
+    @module_required("bh")
     def bh_bulk_status():
         user = _require_user()
         if not isinstance(user, GoogleUser): return user
@@ -816,6 +857,7 @@ if app.config.get("ENABLE_FRONTEND", False):
             return _error(str(e), 500)
 
     @app.route("/api/bh/account/<account_id>/daily", methods=["GET"])
+    @module_required("bh")
     def bh_account_daily(account_id):
         user = _require_user()
         if not isinstance(user, GoogleUser): return user

@@ -1,0 +1,86 @@
+<header class="app-header">
+    <div class="header-left">
+        <!-- App Launcher -->
+        <div class="app-launcher-container">
+            <button class="launcher-btn" onclick="toggleLauncher()" title="Switch App">
+                <i class="bi bi-grid-3x3-gap"></i>
+            </button>
+            <div id="app-launcher-menu" class="launcher-menu">
+                <a href="/cmp" class="launcher-item">
+                    <div class="launcher-icon"><i class="fas fa-layer-group"></i></div>
+                    <span>CMP</span>
+                </a>
+                <a href="/bh" class="launcher-item">
+                    <div class="launcher-icon"><i class="fas fa-chart-line"></i></div>
+                    <span>Budget Hunter</span>
+                </a>
+                <a href="/media" class="launcher-item">
+                    <div class="launcher-icon"><i class="fas fa-chart-pie"></i></div>
+                    <span>Media Dashboard</span>
+                </a>
+                <a href="http://dpop.pacplatform.net/dctool/page/weeklyreport.php" class="launcher-item"
+                    target="_blank">
+                    <div class="launcher-icon"><i class="fas fa-bolt"></i></div>
+                    <span>One Report</span>
+                </a>
+                {% if session.get('user_role') == 'admin' %}
+                <div class="launcher-divider"></div>
+                <a href="/admin/users" class="launcher-item">
+                    <div class="launcher-icon text-warning"><i class="fas fa-user-shield"></i></div>
+                    <span class="text-warning">User Management</span>
+                </a>
+                <a href="/admin/accounts" class="launcher-item">
+                    <div class="launcher-icon text-info"><i class="fas fa-file-invoice-dollar"></i></div>
+                    <span class="text-info">CMP Accounts</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="brand-divider"></div>
+
+        <div class="app-brand">
+            <div class="logo-container">
+                {% if page_title == 'Budget Hunter 神盾追速' %}
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+                {% else %}
+                <img src="{{ url_for('static', filename='broadciellogo.png') }}" class="brand-logo" alt="Logo"
+                    style="height: 24px;">
+                {% endif %}
+            </div>
+            <span class="brand-name">{{ page_title }}</span>
+        </div>
+    </div>
+
+    <div class="header-right d-flex align-items-center">
+        {% if session.get('user_role') == 'admin' %}
+        <a href="/admin/users" class="btn btn-sm me-2" style="border: 1px solid #f59e0b; color: #f59e0b;"><i
+                class="fas fa-user-shield me-1"></i>系統人員管理</a>
+        <a href="/admin/accounts" class="btn btn-sm me-3" style="border: 1px solid #0ea5e9; color: #0ea5e9;"><i
+                class="fas fa-file-invoice-dollar me-1"></i>CMP帳戶管理</a>
+        {% endif %}
+        <button class="user-profile-btn ms-2">
+            <div class="user-avatar-small">{{ session.get('user', {}).get('name', 'U')[0]|upper }}</div>
+            <span>{{ session.get('user', {}).get('name', 'User') }}</span>
+        </button>
+        <button onclick="location.href='/logout'" class="logout-btn ms-2" style="padding: 6px 12px; font-size: 14px;">
+            Sign Out
+        </button>
+    </div>
+</header>
+<script>
+    function toggleLauncher() {
+        const menu = document.getElementById('app-launcher-menu');
+        menu.classList.toggle('show');
+
+        // Close when clicking outside
+        document.addEventListener('click', function closeMenu(e) {
+            if (!e.target.closest('.app-launcher-container')) {
+                menu.classList.remove('show');
+                document.removeEventListener('click', closeMenu);
+            }
+        });
+    }
+</script>

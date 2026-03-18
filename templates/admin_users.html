@@ -95,56 +95,8 @@
 </head>
 <body>
     <div id="app">
-        <header class="app-header">
-            <div class="header-left">
-                <div class="app-launcher-container">
-                    <button class="launcher-btn" @click="isLauncherOpen = !isLauncherOpen" :class="{active: isLauncherOpen}">
-                        <i class="bi bi-grid-3x3-gap"></i>
-                    </button>
-                    <div class="launcher-menu" :class="{show: isLauncherOpen}">
-                        <a href="/cmp" class="launcher-item">
-                            <div class="launcher-icon"><i class="fas fa-layer-group"></i></div>
-                            <span>CMP</span>
-                        </a>
-                        <a href="/bh" class="launcher-item">
-                            <div class="launcher-icon"><i class="fas fa-chart-line"></i></div>
-                            <span>Budget Hunter</span>
-                        </a>
-                        <a href="/media" class="launcher-item">
-                            <div class="launcher-icon"><i class="fas fa-chart-pie"></i></div>
-                            <span>Media Dashboard</span>
-                        </a>
-                        <div class="launcher-divider" style="height: 1px; background: rgba(255,255,255,0.1); margin: 8px 0;"></div>
-                        <a href="/admin/users" class="launcher-item">
-                            <div class="launcher-icon text-warning"><i class="fas fa-user-shield"></i></div>
-                            <span class="text-warning">User Management</span>
-                        </a>
-                        <a href="/admin/accounts" class="launcher-item">
-                            <div class="launcher-icon text-info"><i class="fas fa-file-invoice-dollar"></i></div>
-                            <span class="text-info">CMP Accounts</span>
-                        </a>
-                    </div>
-                </div>
-                <div class="brand-divider"></div>
-                <div class="app-brand">
-                    <i class="fas fa-user-shield text-warning me-2"></i>
-                    <span>Admin: User Management</span>
-                </div>
-            </div>
-            <div class="header-right d-flex align-items-center">
-                {% if session.get('user_role') == 'admin' %}
-                    <a href="/admin/users" class="btn btn-sm me-2" style="border: 1px solid #f59e0b; color: #f59e0b;"><i class="fas fa-user-shield me-1"></i>系統人員管理</a>
-                    <a href="/admin/accounts" class="btn btn-sm me-3" style="border: 1px solid #0ea5e9; color: #0ea5e9;"><i class="fas fa-file-invoice-dollar me-1"></i>CMP帳戶管理</a>
-                {% endif %}
-                <button class="user-profile-btn ms-2">
-                    <div class="user-avatar-small">A</div>
-                    <span>Admin</span>
-                </button>
-                <button onclick="location.href='/logout'" class="logout-btn ms-2" style="padding: 6px 12px; font-size: 14px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 6px;">
-                    Sign Out
-                </button>
-            </div>
-        </header>
+        {% set page_title = "Admin: User Management" %}
+        {% include '_header.html' %}
 
         <main class="workspace-container">
             <div class="d-flex justify-content-between align-items-center mb-4">
@@ -241,7 +193,7 @@
                         <div class="mb-3">
                             <label class="form-label">模組存取權限</label>
                             <div class="d-flex flex-wrap gap-3 mt-2">
-                                <div class="form-check" v-for="mod in ['cmp', 'bh', 'media_dashboard']" :key="mod">
+                                <div class="form-check" v-for="mod in ['cmp', 'bh', 'media']" :key="mod">
                                     <input class="form-check-input" type="checkbox" :value="mod" v-model="form.access_modules">
                                     <label class="form-check-label">[[ mod.toUpperCase().replace('_', ' ') ]]</label>
                                 </div>
@@ -273,7 +225,7 @@
                         name: '',
                         role: 'viewer',
                         is_active: true,
-                        access_modules: ['cmp', 'bh', 'media_dashboard']
+                        access_modules: ['cmp', 'bh', 'media']
                     },
                     modal: null
                 }
@@ -307,7 +259,7 @@
                         name: '',
                         role: 'viewer',
                         is_active: true,
-                        access_modules: ['cmp', 'bh', 'media_dashboard']
+                        access_modules: ['cmp', 'bh', 'media']
                     };
                     this.modal.show();
                 },

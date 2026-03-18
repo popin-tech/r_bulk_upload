@@ -7,7 +7,7 @@ CREATE TABLE `users` (
   `email` VARCHAR(255) NOT NULL,
   `role` ENUM('admin', 'ae', 'viewer') NOT NULL DEFAULT 'viewer',
   `is_active` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否允許登入系統',
-  `access_modules` JSON DEFAULT NULL COMMENT 'JSON Array: ["cmp", "bh", "media_dashboard"]',
+  `access_modules` JSON DEFAULT NULL COMMENT 'JSON Array: ["cmp", "bh", "media"]',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -34,25 +34,25 @@ CREATE TABLE `bh_account_aes` (
 
 -- A. 從舊 config/allowed_emails.json 轉換的名單 (預設為 viewer, 全模組權限)
 INSERT INTO `users` (`email`, `role`, `access_modules`) VALUES
-('fu.leopold@gmail.com', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('leo@popin.cc', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('spigflying@gmail.com', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('benson@popin.cc', 'admin', '["cmp", "bh", "media_dashboard"]'), -- Benson 設為 Admin
-('daniel@popin.cc', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('linzhongjyun@popin.cc', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('lulu@popin.cc', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('kalvin@broadciel.com', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('cindy@popin.cc', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('ted@popin.cc', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('tina@popin.cc', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('joyce@broadciel.com', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('crystal@popin.cc', 'viewer', '["cmp", "bh", "media_dashboard"]'),
-('teresa@broadciel.com', 'viewer', '["cmp", "bh", "media_dashboard"]');
+('fu.leopold@gmail.com', 'viewer', '["cmp", "bh", "media"]'),
+('leo@popin.cc', 'viewer', '["cmp", "bh", "media"]'),
+('spigflying@gmail.com', 'viewer', '["cmp", "bh", "media"]'),
+('benson@popin.cc', 'admin', '["cmp", "bh", "media"]'), -- Benson 設為 Admin
+('daniel@popin.cc', 'viewer', '["cmp", "bh", "media"]'),
+('linzhongjyun@popin.cc', 'viewer', '["cmp", "bh", "media"]'),
+('lulu@popin.cc', 'viewer', '["cmp", "bh", "media"]'),
+('kalvin@broadciel.com', 'viewer', '["cmp", "bh", "media"]'),
+('cindy@popin.cc', 'viewer', '["cmp", "bh", "media"]'),
+('ted@popin.cc', 'viewer', '["cmp", "bh", "media"]'),
+('tina@popin.cc', 'viewer', '["cmp", "bh", "media"]'),
+('joyce@broadciel.com', 'viewer', '["cmp", "bh", "media"]'),
+('crystal@popin.cc', 'viewer', '["cmp", "bh", "media"]'),
+('teresa@broadciel.com', 'viewer', '["cmp", "bh", "media"]');
 
 -- B. 新加的 AE 名單 (預設角色為 ae, 全模組權限)
 INSERT INTO `users` (`name`, `email`, `role`, `access_modules`) VALUES
-('jessica', 'jessica@popin.cc', 'ae', '["cmp", "bh", "media_dashboard"]'),
-('emma', 'emma@broadciel.com', 'ae', '["cmp", "bh", "media_dashboard"]'),
-('zoey', 'zoey@broadciel.com', 'ae', '["cmp", "bh", "media_dashboard"]'),
-('daniel', 'daniel@broadciel.com', 'ae', '["cmp", "bh", "media_dashboard"]'),
-('lisa', 'lisa@broadciel.com', 'ae', '["cmp", "bh", "media_dashboard"]');
+('jessica', 'jessica@popin.cc', 'ae', '["cmp", "bh", "media"]'),
+('emma', 'emma@broadciel.com', 'ae', '["cmp", "bh", "media"]'),
+('zoey', 'zoey@broadciel.com', 'ae', '["cmp", "bh", "media"]'),
+('daniel', 'daniel@broadciel.com', 'ae', '["cmp", "bh", "media"]'),
+('lisa', 'lisa@broadciel.com', 'ae', '["cmp", "bh", "media"]');
