@@ -98,7 +98,7 @@ class User(db.Model):
     email = db.Column(db.String(255), unique=True, nullable=False)
     role = db.Column(db.Enum('admin', 'ae', 'viewer'), nullable=False, default='viewer')
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    access_modules = db.Column(db.JSON, nullable=True, comment='["cmp", "bh", "media_dashboard"]')
+    access_modules = db.Column(db.JSON, nullable=True, comment='["cmp", "bh", "media"]')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

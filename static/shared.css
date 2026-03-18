@@ -111,6 +111,14 @@
     color: #4285f4;
 }
 
+/* Launcher Divider spanning two columns */
+.launcher-divider {
+    grid-column: span 2;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 8px 0;
+}
+
 /* Brand */
 .brand-divider {
     width: 1px;

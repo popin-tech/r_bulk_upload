@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>無權限存取 - CMP / Budget Hunter</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;               /* slate-900 */
+            --bg-secondary: #1e293b;         /* slate-800 */
+            --border-color: #334155;           /* slate-700 */
+            --text-primary: #f8fafc;           /* slate-50 */
+            --text-secondary: #94a3b8;         /* slate-400 */
+            --accent-color: #3b82f6;           /* blue-500 */
+            --danger-color: #ef4444;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-container {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 3rem;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .icon-container {
+            width: 80px;
+            height: 80px;
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            margin: 0 auto 1.5rem auto;
+        }
+
+        h2 {
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        .copy-box {
+            background: rgba(0,0,0,0.3);
+            border: 1px dashed var(--border-color);
+            padding: 1rem;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+            text-align: left;
+        }
+
+        .copy-box code {
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+
+        .btn-copy {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            margin-left: 1rem;
+        }
+
+        .btn-copy:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .btn-primary {
+            background: var(--accent-color);
+            border: none;
+            padding: 0.75rem 2rem;
+            font-weight: 500;
+            border-radius: 8px;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="auth-container">
+        <div class="icon-container">
+            <i class="fas fa-lock"></i>
+        </div>
+        
+        <h2>權限不足 (Access Denied)</h2>
+        <p>
+            您目前沒有進入 <strong>{{ module }}</strong> 模組的權限。<br>
+            若需要使用此功能，請先向系統管理員 (Admin) 申請開啟權限。
+        </p>
+
+        <div class="copy-box">
+            <code id="request-text">我需要 {{ module }} 權限，我的登入帳戶是 {{ email }}</code>
+            <button class="btn-copy" onclick="copyText()">
+                <i class="fas fa-copy me-1"></i> 複製文字
+            </button>
+        </div>
+
+        <a href="/" class="btn btn-primary">
+            <i class="fas fa-home me-2"></i>回首頁 (或重新登入)
+        </a>
+    </div>
+
+    <script>
+        function copyText() {
+            const text = document.getElementById('request-text').innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('.btn-copy');
+                const originalHTML = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i> 已複製';
+                btn.style.color = '#10b981';
+                btn.style.borderColor = '#10b981';
+                
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.style.color = 'white';
+                    btn.style.borderColor = 'rgba(255,255,255,0.2)';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

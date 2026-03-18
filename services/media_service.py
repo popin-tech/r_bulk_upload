@@ -7,7 +7,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-class MediaDashboardService:
+class MediaService:
     def __init__(self, key_path: str = "config/service_account.json"):
         self.key_path = key_path
         self.scopes = [
