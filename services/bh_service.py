@@ -205,7 +205,14 @@ class BHService:
         query = BHAccount.query.filter_by(status='active')
         
         if owner_email:
-            query = query.filter(BHAccount.owner_email == owner_email)
+            # Include accounts where user is the owner OR an assigned AE
+            ae_account_ids = db.session.query(BHAccountAE.bh_account_id).filter(
+                BHAccountAE.ae_email == owner_email
+            ).subquery()
+            query = query.filter(or_(
+                BHAccount.owner_email == owner_email,
+                BHAccount.id.in_(ae_account_ids)
+            ))
         
         if search_term:
             # Simple fuzzy search
