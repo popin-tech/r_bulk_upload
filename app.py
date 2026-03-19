@@ -140,6 +140,9 @@ def module_required(module_name: str):
         def decorated_function(*args, **kwargs):
             user = _require_user()
             if isinstance(user, Response):
+                # HTML page requests: redirect to login instead of returning JSON error
+                if not request.path.startswith("/api/"):
+                    return redirect(url_for("index"))
                 return user
             
             access_modules = session.get("access_modules", [])
