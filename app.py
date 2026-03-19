@@ -620,7 +620,7 @@ if app.config.get("ENABLE_FRONTEND", False):
         return render_template("admin_users.html")
 
     @app.route("/api/admin/users", methods=["GET"])
-    @admin_required
+    @login_required
     def get_admin_users():
         users = User.query.all()
         return jsonify({"status": "ok", "users": [u.to_dict() for u in users]})
