@@ -335,16 +335,23 @@ class BHSyncService:
             existing = BHDailyStats.query.filter_by(account_id=account_id, date=date).first()
             
             new_spend = float(stats.get('spend', 0))
+            new_clicks = int(stats.get('clicks', 0))
+            new_conv = int(stats.get('conversions', 0))
 
             if existing:
                 old_spend = float(existing.spend) if existing.spend else 0.0
+                old_clicks = int(existing.clicks) if existing.clicks else 0
+                old_conv = int(existing.conversions) if existing.conversions else 0
                 
-                # Target Strategy: Only overwrite if the newly fetched spend is strictly greater
-                if new_spend > old_spend:
+                # 條件：新資料都不能小於舊資料，但只要有一個數據是大於，就要更新資料
+                is_not_less = (new_spend >= old_spend and new_clicks >= old_clicks and new_conv >= old_conv)
+                has_increase = (new_spend > old_spend or new_clicks > old_clicks or new_conv > old_conv)
+
+                if is_not_less and has_increase:
                     existing.spend = new_spend
                     existing.impressions = stats.get('impressions', 0)
-                    existing.clicks = stats.get('clicks', 0)
-                    existing.conversions = stats.get('conversions', 0)
+                    existing.clicks = new_clicks
+                    existing.conversions = new_conv
                     existing.updated_at = datetime.utcnow()
                     db.session.add(existing) # Re-add to session for update tracking
                 else:
@@ -356,8 +363,8 @@ class BHSyncService:
                     date=date,
                     spend=new_spend,
                     impressions=stats.get('impressions', 0),
-                    clicks=stats.get('clicks', 0),
-                    conversions=stats.get('conversions', 0),
+                    clicks=new_clicks,
+                    conversions=new_conv,
                     updated_at=datetime.utcnow(),
                     raw_data=None 
                 )
