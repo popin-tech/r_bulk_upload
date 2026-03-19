@@ -1,6 +1,7 @@
 import requests
 import time
 import json
+import re
 from datetime import datetime, timedelta
 import logging
 
@@ -151,23 +152,25 @@ class RixbeeClient:
         # behavior5: Search
         # behavior6: CompleteRegistration
         
+        # Normalized CV Mapping (lowercase, no symbols)
         CV_MAP = {
-            'CompleteCheckout': 'behavior1',
-            'AddToCart': 'behavior4',
-            'ViewContent': 'behavior0',
-            'Checkout': 'behavior2',
-            'Bookmark': 'behavior3',
-            'Search': 'behavior5',
-            'CompleteRegistration': 'behavior6'
+            'completecheckout': 'behavior1',
+            'addtocart': 'behavior4',
+            'viewcontent': 'behavior0',
+            'checkout': 'behavior2',
+            'bookmark': 'behavior3',
+            'search': 'behavior5',
+            'completeregistration': 'behavior6'
         }
         
         target_behaviors = []
         if cv_definition:
             # "CompleteCheckout,AddToCart"
             for cv_name in cv_definition.split(','):
-                cv_name = cv_name.strip()
-                if cv_name in CV_MAP:
-                    target_behaviors.append(CV_MAP[cv_name])
+                # Normalize: lowercase and remove all non-alphanumeric characters (including spaces/underscores)
+                clean_name = re.sub(r'[^a-zA-Z0-9]', '', cv_name).lower()
+                if clean_name in CV_MAP:
+                    target_behaviors.append(CV_MAP[clean_name])
         
         # If no definition, maybe default to behavior1? Or 0?
         # User said: "R的cv定義" is user-defined in Excel.
