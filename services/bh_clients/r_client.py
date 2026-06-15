@@ -1,3 +1,4 @@
+import os
 import requests
 import time
 import json
@@ -8,11 +9,22 @@ import logging
 logger = logging.getLogger(__name__)
 
 class RixbeeClient:
-    # Token Configurations (Ported from rixbee.php)
+    # Token Configurations
+    # 優先讀環境變數（RIXBEE_*_TOKEN / RIXBEE_*_USERID），未設定時退回原預設值以免線上中斷。
+    # 正式環境建議用 Cloud Run --set-secrets / Secret Manager 注入，勿依賴程式內預設。
     TOKENS = {
-        'taiwan': {'token': 'f3c1b67f25e4423001cd9a29fb310998', 'user_id': '7161'}, #台客 (Old default)
-        '4a': {'token': 'f3f63d0b878569c7b824096b1a0f14b2', 'user_id': '7168'}, #4A (Old direct)
-        'super': {'token': 'e36da40d2fe00d708464c0269c051140', 'user_id': '7153'}
+        'taiwan': {  # 台客 (agency)
+            'token': os.getenv('RIXBEE_AGENCY_TOKEN', 'f3c1b67f25e4423001cd9a29fb310998'),
+            'user_id': os.getenv('RIXBEE_AGENCY_USERID', '7161'),
+        },
+        '4a': {  # 4A (direct)
+            'token': os.getenv('RIXBEE_DIRECT_TOKEN', 'f3f63d0b878569c7b824096b1a0f14b2'),
+            'user_id': os.getenv('RIXBEE_DIRECT_USERID', '7168'),
+        },
+        'super': {  # Super (總管帳號，看得到全部)
+            'token': os.getenv('RIXBEE_SUPER_TOKEN', 'e36da40d2fe00d708464c0269c051140'),
+            'user_id': os.getenv('RIXBEE_SUPER_USERID', '7153'),
+        },
     }
 
     API_URL = 'https://broadciel.rpt.rixbeedesk.com/api/report/v1'
@@ -41,18 +53,27 @@ class RixbeeClient:
         elif agent_id_int == 7161:
             # 台客 -> Taiwan Token
             return self._fetch_with_token('taiwan', account_ids, start_date, end_date)
-        
-        # Legacy / Fallback: Try Taiwan Token first
-        try:
-            return self._fetch_with_token('taiwan', account_ids, start_date, end_date)
-        except Exception as e:
-            logger.warning(f"Rixbee Taiwan token failed: {e}. Trying 4A token...")
-            # Try 4A Token
+        elif agent_id_int == 7153:
+            # Super -> Super Token
+            return self._fetch_with_token('super', account_ids, start_date, end_date)
+
+        # agent 未指定：自動偵測帳號類型（台客 -> 4A -> Super），回第一個「有資料」的結果。
+        # 任一型 token 缺失/出錯視為該型無資料，繼續試下一型；三型皆查無才回空。
+        last_data = []
+        last_err = None
+        for token_type in ('taiwan', '4a', 'super'):
             try:
-                return self._fetch_with_token('4a', account_ids, start_date, end_date)
-            except Exception as e2:
-                logger.error(f"Rixbee 4A token also failed: {e2}")
-                raise e2
+                data = self._fetch_with_token(token_type, account_ids, start_date, end_date)
+                if data:
+                    return data  # 有資料即採用
+                last_data = data
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Rixbee {token_type} token failed: {e}. Trying next type...")
+                continue
+        if last_err and not last_data:
+            logger.error(f"Rixbee all token types failed, last error: {last_err}")
+        return last_data
 
     def _fetch_with_token(self, token_type: str, account_ids: list[str], start_date: str, end_date: str) -> list[dict]:
         creds = self.TOKENS.get(token_type)
