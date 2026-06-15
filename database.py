@@ -82,13 +82,41 @@ class BHDailyStats(db.Model):
 
 
 class BHDAccountToken(db.Model):
-    __tablename__ = 'bh_d_account_token'
+    # 共用庫 nexus.d_tokens（跨工具單一真相，取代原本各自一份的 bh_d_account_token）。
+    # BH(AE 上傳) 一律寫 source='adtools'；讀取 adtools 優先於 dctool 鏡像（用下方 helper）。
+    __tablename__ = 'd_tokens'
+    __table_args__ = {'schema': 'nexus'}
 
-    account_id = db.Column(db.String(50), primary_key=True)
-    account_name = db.Column(db.String(100))
-    token = db.Column(db.Text)  # Token can be long
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    account_id = db.Column(db.String(64))
+    account_name = db.Column(db.String(255), nullable=False)
+    account_source = db.Column(db.String(64))
+    token = db.Column(db.Text, nullable=False)
+    source = db.Column(db.Enum('dctool', 'adtools'), nullable=False, default='adtools')
     created_time = db.Column(db.DateTime, default=datetime.utcnow)
     updated_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+def get_d_token(account_id):
+    """取單一帳號 D token row（adtools 優先於 dctool）；無則回 None。"""
+    rows = BHDAccountToken.query.filter_by(account_id=str(account_id)).all()
+    if not rows:
+        return None
+    rows.sort(key=lambda r: 0 if r.source == 'adtools' else 1)
+    return rows[0]
+
+
+def get_d_token_map(account_ids):
+    """批次取 {account_id: token}（adtools 優先於 dctool）。"""
+    ids = [str(a) for a in account_ids]
+    if not ids:
+        return {}
+    rows = BHDAccountToken.query.filter(BHDAccountToken.account_id.in_(ids)).all()
+    token_map = {}
+    for r in rows:
+        if r.account_id not in token_map or r.source == 'adtools':
+            token_map[r.account_id] = r.token
+    return token_map
 
 class User(db.Model):
     __tablename__ = 'users'

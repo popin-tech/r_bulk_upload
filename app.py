@@ -279,14 +279,17 @@ def bh_update_account(id):
     if "d_token" in data:
          # Need to find and update in BHDAccountToken
          from database import BHDAccountToken
-         token_rec = BHDAccountToken.query.filter_by(account_id=acc.account_id).first()
+         # 共用庫：BH 寫入一律 source='adtools'（upsert 只動 adtools 那筆，不碰 dctool 鏡像）
+         token_rec = BHDAccountToken.query.filter_by(account_id=acc.account_id, source='adtools').first()
          if token_rec:
              token_rec.token = data["d_token"]
          else:
              new_token = BHDAccountToken(
                  account_id=acc.account_id,
-                 account_name=acc.account_name,
-                 token=data["d_token"]
+                 account_name=acc.account_name or acc.account_id,
+                 token=data["d_token"],
+                 source='adtools',
+                 account_source='budget_hunter'
              )
              db.session.add(new_token)
 

@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func, case
 from sqlalchemy.exc import IntegrityError
-from database import db, BHAccount, BHDailyStats, BHDAccountToken, BHAccountAE, User
+from database import db, BHAccount, BHDailyStats, BHDAccountToken, BHAccountAE, User, get_d_token, get_d_token_map
 import logging
 
 logger = logging.getLogger(__name__)
@@ -137,18 +137,21 @@ class BHService:
                         
                     if token_val:
                         # Check if exists (User Rule: "有這個帳戶的token 就不動作，沒有就insert")
-                        existing_token = BHDAccountToken.query.filter_by(account_id=acc_id).first()
+                        # 共用庫：upsert 限定 source='adtools'
+                        existing_token = BHDAccountToken.query.filter_by(account_id=acc_id, source='adtools').first()
                         if existing_token:
                             # Update if changed
                             if existing_token.token != token_val:
                                 existing_token.token = token_val
-                                existing_token.updated_at = datetime.utcnow()
+                                existing_token.updated_time = datetime.utcnow()
                         else:
                             # Insert
                             new_token = BHDAccountToken(
                                 account_id=acc_id,
-                                account_name=account.account_name, # Use the name from account row
-                                token=token_val
+                                account_name=(account.account_name or acc_id), # Use the name from account row
+                                token=token_val,
+                                source='adtools',
+                                account_source='budget_hunter'
                             )
                             db.session.add(new_token)
 
@@ -273,10 +276,7 @@ class BHService:
         # 3. Fetch D-Tokens (Optimized)
         # Only for D accounts? Or all? fetching all is easier if list is small.
         # Filter where account_id in acct_ids
-        tokens = BHDAccountToken.query.filter(
-            BHDAccountToken.account_id.in_(acct_ids)
-        ).all()
-        token_map = {t.account_id: t.token for t in tokens}
+        token_map = get_d_token_map(acct_ids)  # 共用庫，adtools 優先
 
         results = []
         today = datetime.utcnow().date() 
@@ -482,16 +482,18 @@ class BHService:
         # Update D Token
         if 'd_token' in data and acc.platform == 'D':
             token_val = str(data['d_token']).strip()
-            # Upsert BHDAccountToken
-            d_token = BHDAccountToken.query.filter_by(account_id=acc.account_id).first()
+            # Upsert BHDAccountToken（共用庫：限定 source='adtools'）
+            d_token = BHDAccountToken.query.filter_by(account_id=acc.account_id, source='adtools').first()
             if d_token:
                 d_token.token = token_val
                 d_token.updated_time = datetime.utcnow()
             else:
                 new_token = BHDAccountToken(
                     account_id=acc.account_id,
-                    account_name=acc.account_name,
-                    token=token_val
+                    account_name=(acc.account_name or acc.account_id),
+                    token=token_val,
+                    source='adtools',
+                    account_source='budget_hunter'
                 )
                 db.session.add(new_token)
         

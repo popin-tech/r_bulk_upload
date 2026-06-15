@@ -3,7 +3,7 @@ import json
 import logging
 import random
 from datetime import datetime, timedelta, date
-from database import db, BHAccount, BHDailyStats, BHDAccountToken
+from database import db, BHAccount, BHDailyStats, get_d_token, get_d_token_map
 from services.bh_clients.r_client import RixbeeClient
 from services.bh_clients.d_client import DiscoveryClient
 from flask import current_app
@@ -125,7 +125,7 @@ class BHSyncService:
 
                 elif account.platform == 'D':
                     # Get Token
-                    token_row = BHDAccountToken.query.filter_by(account_id=account_id).first()
+                    token_row = get_d_token(account_id)  # 共用庫，adtools 優先
                     if not token_row:
                         yield f"data: {json.dumps({'msg': f'No Token found for this account.', 'type': 'error'})}\n\n"
                         return
@@ -273,8 +273,7 @@ class BHSyncService:
                 
                 # 1. Fetch Tokens for these accounts
                 d_acc_ids = [a.account_id for a in d_accounts]
-                tokens = BHDAccountToken.query.filter(BHDAccountToken.account_id.in_(d_acc_ids)).all()
-                token_map = {t.account_id: t.token for t in tokens} # AccID -> Token
+                token_map = get_d_token_map(d_acc_ids) # AccID -> Token（共用庫，adtools 優先）
                 
                 # 2. Group Accounts by Token
                 accs_by_token = {}
@@ -516,7 +515,7 @@ class BHSyncService:
                                         print(f"[Worker-Log] {err_msg}", flush=True)
 
                         elif platform == 'D':
-                            d_token_row = BHDAccountToken.query.filter_by(account_id=acc_id).first()
+                            d_token_row = get_d_token(acc_id)  # 共用庫，adtools 優先
                             if not d_token_row:
                                 logs.append(f"     [WARNING] No Token for D-Account {acc_id}")
                             else:
