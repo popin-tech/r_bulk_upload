@@ -82,16 +82,8 @@ class BHService:
                 # Create New Account (Always insert new tailored to user request: "Same ID not overwrite, treat as new entry")
                 # Wait, if same ID same dates? User said "multple periods treat as multiple entries".
                 # But we have Auto-Increment ID as PK. So it's fine.
-                
-                # Parse R Agent if Platform is R
-                r_agent_id = None
-                if platform == 'R':
-                    agent_str = str(row.get('R代理', '')).strip()
-                    if agent_str == '4A':
-                        r_agent_id = 7168
-                    elif agent_str == '台客':
-                        r_agent_id = 7161
-                
+                # 註：R 平台代理(token)已改為自動偵測，不再從 Excel 的「R代理」欄位帶入。
+
                 account = BHAccount(
                     platform=platform,
                     account_id=acc_id,
@@ -115,8 +107,7 @@ class BHService:
                     ctr_goal=ctr,
                     cv_definition=cv_def,
                     owner_email=owner_email,
-                    status='active',
-                    agent=r_agent_id
+                    status='active'
                 )
                 
                 # If 'AccountName' or '名稱' exists
