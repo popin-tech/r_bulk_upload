@@ -137,12 +137,13 @@ class BHService:
                         
                     if token_val:
                         # Check if exists (User Rule: "有這個帳戶的token 就不動作，沒有就insert")
-                        # 共用庫：upsert 限定 source='adtools'
-                        existing_token = BHDAccountToken.query.filter_by(account_id=acc_id, source='adtools').first()
+                        # 共用庫(account_id 唯一)：upsert 該帳號，接管並標 source='adtools'
+                        existing_token = BHDAccountToken.query.filter_by(account_id=acc_id).first()
                         if existing_token:
                             # Update if changed
                             if existing_token.token != token_val:
                                 existing_token.token = token_val
+                                existing_token.source = 'adtools'
                                 existing_token.updated_time = datetime.utcnow()
                         else:
                             # Insert
@@ -482,10 +483,11 @@ class BHService:
         # Update D Token
         if 'd_token' in data and acc.platform == 'D':
             token_val = str(data['d_token']).strip()
-            # Upsert BHDAccountToken（共用庫：限定 source='adtools'）
-            d_token = BHDAccountToken.query.filter_by(account_id=acc.account_id, source='adtools').first()
+            # Upsert BHDAccountToken（共用庫 account_id 唯一：接管並標 adtools）
+            d_token = BHDAccountToken.query.filter_by(account_id=acc.account_id).first()
             if d_token:
                 d_token.token = token_val
+                d_token.source = 'adtools'
                 d_token.updated_time = datetime.utcnow()
             else:
                 new_token = BHDAccountToken(
