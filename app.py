@@ -9,6 +9,11 @@ from dataclasses import asdict
 from typing import Any, Dict
 from openpyxl import Workbook
 
+# 載入 .env（須在 import services 之前，r_client 的 TOKENS 於 import 時就讀取環境變數）。
+# .env 不入 git；缺檔或缺值時各模組仍有程式內預設，不致中斷。
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, jsonify, request, send_from_directory, render_template, send_file, Response, session, redirect, url_for, current_app
 
 from services.auth import AuthError, GoogleUser, verify_google_token

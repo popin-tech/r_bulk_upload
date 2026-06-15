@@ -9,3 +9,5 @@ instance/
 *.pem
 !server-ca.pem
 config/service_account.json
+poc/
+.env
