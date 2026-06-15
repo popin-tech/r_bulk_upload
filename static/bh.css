@@ -119,7 +119,7 @@ body {
     position: fixed;
     top: 0;
     right: 0;
-    width: 600px;
+    width: 760px;
     max-width: 90vw;
     height: 100vh;
     background: linear-gradient(135deg, rgba(57, 159, 171, 0.95), rgba(94, 53, 177, 0.95));

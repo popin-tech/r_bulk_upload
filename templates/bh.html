@@ -405,11 +405,14 @@
                                             <th class="text-end">Impr.</th>
                                             <th class="text-end">Clicks</th>
                                             <th class="text-end">Conv.</th>
+                                            <th class="text-end">CTR</th>
+                                            <th class="text-end">CPC</th>
+                                            <th class="text-end">CPA</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <tr v-if="!dailyStats || dailyStats.length===0">
-                                            <td colspan="5" class="text-center text-white-50">No recent stats</td>
+                                            <td colspan="8" class="text-center text-white-50">No recent stats</td>
                                         </tr>
                                         <tr v-for="stat in dailyStats" :key="stat.date">
                                             <td>[[ stat.date ]]</td>
@@ -417,6 +420,9 @@
                                             <td class="text-end">[[ stat.impressions.toLocaleString() ]]</td>
                                             <td class="text-end">[[ stat.clicks.toLocaleString() ]]</td>
                                             <td class="text-end">[[ stat.conversions.toLocaleString() ]]</td>
+                                            <td class="text-end">[[ calcCtr(stat) ]]</td>
+                                            <td class="text-end">[[ calcCpc(stat) ]]</td>
+                                            <td class="text-end">[[ calcCpa(stat) ]]</td>
                                         </tr>
                                     </tbody>
                                 </table>

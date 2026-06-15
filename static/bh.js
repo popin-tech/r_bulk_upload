@@ -482,6 +482,21 @@ const app = createApp({
                     return Number(n).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
                 } catch (e) { return '0'; }
             },
+            // CTR = 點擊 / 曝光 × 100%，曝光為 0 時顯示 '-'
+            calcCtr: (stat) => {
+                if (!stat || !stat.impressions) return '-';
+                return (stat.clicks / stat.impressions * 100).toFixed(2) + '%';
+            },
+            // CPC = 花費 / 點擊，點擊為 0 時顯示 '-'
+            calcCpc: (stat) => {
+                if (!stat || !stat.clicks) return '-';
+                return (stat.spend / stat.clicks).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            },
+            // CPA = 花費 / 轉換，轉換為 0 時顯示 '-'
+            calcCpa: (stat) => {
+                if (!stat || !stat.conversions) return '-';
+                return (stat.spend / stat.conversions).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            },
             mathMin: (a, b) => Math.min(a, b),
 
             // Bulk
