@@ -63,18 +63,38 @@
             color: white;
             box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.25);
         }
+        .toast-tray {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            z-index: 1080;
+        }
+        .glass-toast {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.75rem 1.1rem;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            color: #f8fafc;
+            background: rgba(30, 41, 59, 0.95);
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+        }
+        .glass-toast.success i { color: #22c55e; }
+        .glass-toast.error i { color: #f87171; }
     </style>
 </head>
 <body>
     <div id="app">
-        {% set page_title = "Admin: CMP Config (account.json)" %}
+        {% set page_title = "Admin: CMP Config" %}
         {% include '_header.html' %}
 
         <main class="workspace-container">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <div>
                     <h2 class="fw-bold mb-1">CMP Account 設定</h2>
-                    <p class="text-muted mb-0">管理系統介接的 Broadciel / popIn 廣告帳戶 (JSON 配置)</p>
+                    <p class="text-muted mb-0">管理系統介接的 Broadciel 廣告帳戶 Token，變更即時儲存</p>
                 </div>
                 <button class="btn btn-primary" @click="openCreateModal">
                     <i class="fas fa-plus me-2"></i>新增帳戶
@@ -92,60 +112,70 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="(acc, idx) in accounts" :key="idx">
+                        <tr v-for="(acc, idx) in accounts" :key="acc.id">
                             <td class="ps-4 fw-bold">[[ acc.email ]]</td>
                             <td>[[ acc.name ]]</td>
                             <td class="text-muted font-monospace small">
                                 [[ acc.token ? acc.token.substring(0, 15) + '...' : 'N/A' ]]
                             </td>
                             <td class="text-end pe-4">
-                                <button class="btn btn-sm btn-outline-light me-2" @click="editAccount(idx)">
+                                <button class="btn btn-sm btn-outline-light me-2" @click="editAccount(idx)" :disabled="acc.id === busyId">
                                     <i class="fas fa-edit"></i>
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger" @click="deleteAccount(idx)">
-                                    <i class="fas fa-trash"></i>
+                                <button class="btn btn-sm btn-outline-danger" @click="deleteAccount(idx)" :disabled="acc.id === busyId">
+                                    <i class="fas" :class="acc.id === busyId ? 'fa-spinner fa-spin' : 'fa-trash'"></i>
                                 </button>
                             </td>
                         </tr>
-                        <tr v-if="accounts.length === 0">
-                            <td colspan="4" class="text-center py-4 text-muted">目前沒有資料設定。</td>
+                        <tr v-if="!isLoading && accounts.length === 0">
+                            <td colspan="4" class="text-center py-4 text-muted">還沒有帳戶，點右上角「新增帳戶」開始。</td>
+                        </tr>
+                        <tr v-if="isLoading">
+                            <td colspan="4" class="text-center py-4 text-muted">
+                                <i class="fas fa-spinner fa-spin me-2"></i>載入中…
+                            </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-            
-            <div class="mt-4 text-end">
-                <button class="btn btn-success px-4" @click="saveToServer" :disabled="isSaving">
-                    <i class="fas" :class="isSaving ? 'fa-spinner fa-spin' : 'fa-save'"></i> [[ isSaving ? '儲存中...' : '儲存變更至伺服器' ]]
-                </button>
-            </div>
         </main>
+
+        <!-- Toast: 操作結果提示 -->
+        <div class="toast-tray">
+            <div v-if="toast" class="glass-toast" :class="toast.type">
+                <i class="fas" :class="toast.type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'"></i>
+                <span>[[ toast.text ]]</span>
+            </div>
+        </div>
 
         <!-- Edit/Create Modal -->
         <div class="modal fade" id="accModal" tabindex="-1">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">[[ editIndex === -1 ? '新增帳戶' : '編輯帳戶' ]]</h5>
+                        <h5 class="modal-title">[[ editId === null ? '新增帳戶' : '編輯帳戶' ]]</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
+                        <div v-if="formError" class="alert alert-danger py-2 small mb-3">[[ formError ]]</div>
                         <div class="mb-3">
                             <label class="form-label">Account Email</label>
-                            <input type="email" class="form-control" v-model="form.email" placeholder="example@popin.cc">
+                            <input type="email" class="form-control" v-model="form.email" placeholder="example@popin.cc" @keyup.enter="confirmForm">
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Account Name</label>
-                            <input type="text" class="form-control" v-model="form.name" placeholder="輸入名稱">
+                            <input type="text" class="form-control" v-model="form.name" placeholder="輸入名稱" @keyup.enter="confirmForm">
                         </div>
                         <div class="mb-3">
                             <label class="form-label">API Token</label>
-                            <input type="text" class="form-control" v-model="form.token" placeholder="Bearer Token">
+                            <input type="text" class="form-control" v-model="form.token" placeholder="Bearer Token" @keyup.enter="confirmForm">
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                        <button type="button" class="btn btn-primary" @click="confirmForm">確認</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" :disabled="isSaving">取消</button>
+                        <button type="button" class="btn btn-primary" @click="confirmForm" :disabled="isSaving">
+                            <i v-if="isSaving" class="fas fa-spinner fa-spin me-1"></i>[[ isSaving ? '儲存中…' : '儲存' ]]
+                        </button>
                     </div>
                 </div>
             </div>
@@ -161,20 +191,25 @@
                 return {
                     accounts: [],
                     isLauncherOpen: false,
+                    isLoading: true,
                     isSaving: false,
-                    editIndex: -1,
+                    busyId: null,       // 正在刪除中的列 id
+                    editId: null,       // null = 新增；否則為編輯中的列 id
                     form: {
                         email: '',
                         name: '',
                         token: ''
                     },
+                    formError: '',
+                    toast: null,
+                    toastTimer: null,
                     modal: null
                 }
             },
             mounted() {
                 this.loadAccounts();
                 this.modal = new bootstrap.Modal(document.getElementById('accModal'));
-                
+
                 // Click outside to close launcher
                 document.addEventListener('click', (e) => {
                     if (!e.target.closest('.app-launcher-container')) {
@@ -183,60 +218,99 @@
                 });
             },
             methods: {
+                showToast(text, type = 'success') {
+                    this.toast = { text, type };
+                    clearTimeout(this.toastTimer);
+                    this.toastTimer = setTimeout(() => { this.toast = null; }, 3000);
+                },
                 async loadAccounts() {
+                    this.isLoading = true;
                     try {
                         const res = await fetch('/api/admin/accounts');
                         const data = await res.json();
                         if (data.status === 'ok') {
                             this.accounts = data.accounts;
                         }
-                    } catch (err) { console.error(err); }
+                    } catch (err) {
+                        console.error(err);
+                        this.showToast('載入帳戶失敗，請重新整理', 'error');
+                    } finally {
+                        this.isLoading = false;
+                    }
                 },
                 openCreateModal() {
-                    this.editIndex = -1;
+                    this.editId = null;
                     this.form = { email: '', name: '', token: '' };
+                    this.formError = '';
                     this.modal.show();
                 },
                 editAccount(idx) {
-                    this.editIndex = idx;
-                    this.form = JSON.parse(JSON.stringify(this.accounts[idx]));
+                    const acc = this.accounts[idx];
+                    this.editId = acc.id;
+                    this.form = { email: acc.email, name: acc.name || '', token: acc.token };
+                    this.formError = '';
                     this.modal.show();
                 },
-                deleteAccount(idx) {
-                    if(confirm("確定要刪除這筆帳戶嗎？儲存後生效。")) {
-                        this.accounts.splice(idx, 1);
-                    }
-                },
-                confirmForm() {
-                    if(!this.form.email || !this.form.token) {
-                        alert("Email 和 Token 為必填項目");
-                        return;
-                    }
-                    if(this.editIndex === -1) {
-                        this.accounts.push({...this.form});
-                    } else {
-                        this.accounts[this.editIndex] = {...this.form};
-                    }
-                    this.modal.hide();
-                },
-                async saveToServer() {
-                    this.isSaving = true;
+                async deleteAccount(idx) {
+                    const acc = this.accounts[idx];
+                    if (!confirm(`確定刪除「${acc.email}」？刪除後立即生效，無法復原。`)) return;
+                    this.busyId = acc.id;
                     try {
-                        const res = await fetch('/api/admin/accounts', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(this.accounts)
-                        });
+                        const res = await fetch(`/api/admin/accounts/${acc.id}`, { method: 'DELETE' });
                         const result = await res.json();
-                        if (result.status === 'ok') {
-                            alert('儲存成功！伺服器設定已更新。');
-                            this.loadAccounts();
+                        if (res.ok && result.status === 'ok') {
+                            this.accounts.splice(idx, 1);
+                            this.showToast(`已刪除 ${acc.email}`);
                         } else {
-                            alert(result.message || '儲存失敗');
+                            this.showToast(result.message || '刪除失敗', 'error');
                         }
                     } catch (err) {
                         console.error(err);
-                        alert('服務器錯誤');
+                        this.showToast('伺服器錯誤，刪除失敗', 'error');
+                    } finally {
+                        this.busyId = null;
+                    }
+                },
+                async confirmForm() {
+                    if (this.isSaving) return;
+                    if (!this.form.email || !this.form.token) {
+                        this.formError = 'Email 和 Token 為必填';
+                        return;
+                    }
+                    this.formError = '';
+                    this.isSaving = true;
+
+                    const isEdit = this.editId !== null;
+                    const url = isEdit ? `/api/admin/accounts/${this.editId}` : '/api/admin/accounts';
+                    const method = isEdit ? 'PUT' : 'POST';
+                    try {
+                        const res = await fetch(url, {
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                email: this.form.email,
+                                name: this.form.name,
+                                token: this.form.token
+                            })
+                        });
+                        const result = await res.json();
+                        if (res.ok && result.status === 'ok') {
+                            if (isEdit) {
+                                const i = this.accounts.findIndex(a => a.id === this.editId);
+                                if (i !== -1) this.accounts[i] = result.account;
+                                this.showToast(`已更新 ${result.account.email}`);
+                            } else {
+                                this.accounts.push(result.account);
+                                this.showToast(`已新增 ${result.account.email}`);
+                            }
+                            this.modal.hide();
+                        } else {
+                            // 409 重複 / 400 缺欄位等：留在 modal 顯示原因
+                            this.formError = result.message || '儲存失敗';
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        this.formError = '伺服器錯誤，儲存失敗';
                     } finally {
                         this.isSaving = false;
                     }

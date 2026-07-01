@@ -6,7 +6,7 @@ from pathlib import Path
 from io import BytesIO
 import base64
 from dataclasses import asdict
-from typing import Any, Dict
+from typing import Dict
 from openpyxl import Workbook
 
 # 載入 .env（須在 import services 之前，r_client 的 TOKENS 於 import 時就讀取環境變數）。
@@ -24,7 +24,7 @@ from services.bh_service import BHService
 from services.bh_sync import BHSyncService
 from services.media_service import MediaService
 from functools import wraps
-from database import db, init_db, BHAccount, BHDailyStats, User, BHAccountAE, BHDAccountToken
+from database import db, init_db, BHAccount, BHDailyStats, User, BHAccountAE, BHDAccountToken, RAccountToken, get_r_token_by_email
 
 app = Flask(__name__)
 
@@ -78,35 +78,7 @@ else:
         }
 
 init_db(app)
-_ACCOUNTS_CACHE: list[dict[str, Any]] | None = None
 _ALLOWED_EMAILS_CACHE: set[str] | None = None
-_TOKEN_BY_EMAIL: dict[str, str] = {}
-
-def _load_accounts() -> list[dict[str, Any]]:
-    """Load accounts from config/account.json once and cache them."""
-    global _ACCOUNTS_CACHE, _TOKEN_BY_EMAIL
-
-    if _ACCOUNTS_CACHE is not None:
-        return _ACCOUNTS_CACHE
-
-    json_path = CONFIG_DIR / "account.json"
-    if not json_path.exists():
-        app.logger.warning("account.json not found in config folder: %s", json_path)
-        _ACCOUNTS_CACHE = []
-        _TOKEN_BY_EMAIL = {}
-        return _ACCOUNTS_CACHE
-
-    with json_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    _ACCOUNTS_CACHE = data
-    _TOKEN_BY_EMAIL = {
-        (item.get("email") or "").lower(): item.get("token", "")
-        for item in data
-        if item.get("email") and item.get("token")
-    }
-    app.logger.info("Loaded %d accounts from %s", len(_ACCOUNTS_CACHE), json_path)
-    return _ACCOUNTS_CACHE
 
 def _is_user_authorized(email: str) -> dict | None:
     """從資料庫檢查使用者是否存在且啟用，並回傳角色與權限"""
@@ -169,11 +141,10 @@ def module_required(module_name: str):
 
 
 def _get_token_for_email(email: str) -> str | None:
-    """Lookup Broadciel token by account email from account.json."""
+    """以 email 查 Broadciel(R) token，來源為 nexus.r_account_tokens。"""
     if not email:
         return None
-    _load_accounts()
-    return _TOKEN_BY_EMAIL.get(email.lower())
+    return get_r_token_by_email(email)
 
 def _get_token_from_header() -> str:
     header = request.headers.get("Authorization", "")
@@ -378,11 +349,11 @@ def list_accounts():
     if not isinstance(user, GoogleUser):
         return user  # 401 / 403
 
-    accounts = _load_accounts()
+    rows = RAccountToken.query.order_by(RAccountToken.name).all()
     items = [
-        {"name": item.get("name"), "email": item.get("email")}
-        for item in accounts
-        if item.get("email")
+        {"name": r.name, "email": r.email}
+        for r in rows
+        if r.email
     ]
     return jsonify({"accounts": items})
 
@@ -681,28 +652,67 @@ if app.config.get("ENABLE_FRONTEND", False):
     @app.route("/api/admin/accounts", methods=["GET"])
     @admin_required
     def get_admin_accounts():
-        json_path = CONFIG_DIR / "account.json"
-        if not json_path.exists():
-            return jsonify({"status": "ok", "accounts": []})
-        with json_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        return jsonify({"status": "ok", "accounts": data})
+        rows = RAccountToken.query.order_by(RAccountToken.id).all()
+        return jsonify({"status": "ok", "accounts": [r.to_dict() for r in rows]})
 
     @app.route("/api/admin/accounts", methods=["POST"])
     @admin_required
-    def save_admin_accounts():
-        data = request.json
-        if not isinstance(data, list):
-            return jsonify({"status": "error", "message": "Expected a list of accounts"}), 400
-        
-        json_path = CONFIG_DIR / "account.json"
-        with json_path.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-            
-        global _ACCOUNTS_CACHE
-        _ACCOUNTS_CACHE = None
-        _load_accounts()
-        
+    def create_admin_account():
+        data = request.json or {}
+        email = (data.get("email") or "").strip()
+        token = (data.get("token") or "").strip()
+        name = (data.get("name") or "").strip()
+        if not email or not token:
+            return jsonify({"status": "error", "message": "Email 和 Token 為必填"}), 400
+
+        # email 為業務鍵，先擋重複（大小寫不敏感）
+        exists = RAccountToken.query.filter(
+            db.func.lower(RAccountToken.email) == email.lower()
+        ).first()
+        if exists:
+            return jsonify({"status": "error", "message": f"此 Email 已存在：{email}"}), 409
+
+        row = RAccountToken(email=email, name=name or None, token=token)
+        db.session.add(row)
+        db.session.commit()
+        return jsonify({"status": "ok", "account": row.to_dict()}), 201
+
+    @app.route("/api/admin/accounts/<int:acc_id>", methods=["PUT"])
+    @admin_required
+    def update_admin_account(acc_id):
+        row = RAccountToken.query.get(acc_id)
+        if not row:
+            return jsonify({"status": "error", "message": "找不到此帳戶"}), 404
+
+        data = request.json or {}
+        email = (data.get("email") or "").strip()
+        token = (data.get("token") or "").strip()
+        name = (data.get("name") or "").strip()
+        if not email or not token:
+            return jsonify({"status": "error", "message": "Email 和 Token 為必填"}), 400
+
+        # 改 email 時，檢查不與其他列衝突
+        dup = RAccountToken.query.filter(
+            db.func.lower(RAccountToken.email) == email.lower(),
+            RAccountToken.id != acc_id,
+        ).first()
+        if dup:
+            return jsonify({"status": "error", "message": f"此 Email 已存在：{email}"}), 409
+
+        row.email = email
+        row.name = name or None
+        row.token = token
+        db.session.commit()
+        return jsonify({"status": "ok", "account": row.to_dict()})
+
+    @app.route("/api/admin/accounts/<int:acc_id>", methods=["DELETE"])
+    @admin_required
+    def delete_admin_account(acc_id):
+        row = RAccountToken.query.get(acc_id)
+        if not row:
+            return jsonify({"status": "error", "message": "找不到此帳戶"}), 404
+        db.session.delete(row)
+        db.session.commit()
         return jsonify({"status": "ok"})
 
     # ------------------------------------------

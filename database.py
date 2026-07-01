@@ -118,6 +118,41 @@ def get_d_token_map(account_ids):
             token_map[r.account_id] = r.token
     return token_map
 
+
+class RAccountToken(db.Model):
+    # 共用庫 nexus.r_account_tokens（跨工具共用單一真相）：CMP 上傳/下載用的
+    # Broadciel(R) 每個廣告主帳號 API token。原本存在 config/account.json，
+    # 因 Cloud Run 無持久化（多 instance／重啟即回退）改存 DB。
+    # 業務鍵＝email（UNIQUE，MySQL utf8mb4 CI 定序天然大小寫不敏感）；id 為流水號主鍵。
+    __tablename__ = 'r_account_tokens'
+    __table_args__ = {'schema': 'nexus'}
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    email = db.Column(db.String(255), nullable=False, unique=True, comment='帳戶 Email（查 token 用）')
+    name = db.Column(db.String(255), nullable=True, comment='帳戶名稱')
+    token = db.Column(db.Text, nullable=False, comment='Broadciel(R) API token')
+    created_time = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'name': self.name,
+            'token': self.token,
+        }
+
+
+def get_r_token_by_email(email):
+    """以 email 取 R token（大小寫不敏感）；無則回 None。"""
+    if not email:
+        return None
+    row = RAccountToken.query.filter(
+        db.func.lower(RAccountToken.email) == email.lower()
+    ).first()
+    return row.token if row else None
+
+
 class User(db.Model):
     __tablename__ = 'users'
 
