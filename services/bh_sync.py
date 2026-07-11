@@ -3,9 +3,10 @@ import json
 import logging
 import random
 from datetime import datetime, timedelta, date
-from database import db, BHAccount, BHDailyStats, get_d_token, get_d_token_map
+from database import db, BHAccount, BHDailyStats, get_d_token, get_d_token_map, get_mgid_token_map
 from services.bh_clients.r_client import RixbeeClient
 from services.bh_clients.d_client import DiscoveryClient
+from services.bh_clients.m_client import MgidClient
 from flask import current_app
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
@@ -205,7 +206,8 @@ class BHSyncService:
             # Group by Platform
             r_accounts = [a for a in accounts if a.platform == 'R']
             d_accounts = [a for a in accounts if a.platform == 'D']
-            
+            m_accounts = [a for a in accounts if a.platform == 'M']
+
             # Randomize D platform accounts to prevent same accounts always failing on API instability
             if d_accounts:
                 random.shuffle(d_accounts)
@@ -312,6 +314,41 @@ class BHSyncService:
                         yield f"data: {json.dumps({'msg': f'  Error in D Token Batch: {str(e)}', 'type': 'error'})}\n\n"
 
                 yield f"data: {json.dumps({'msg': f'  D Platform processed.'})}\n\n"
+
+            # --- Process M Platform (MGID, 併發 <=5 + 429 退避) ---
+            if m_accounts:
+                yield f"data: {json.dumps({'msg': f'Processing {len(m_accounts)} M-Platform accounts (MGID)...'})}\n\n"
+                m_ids = [a.account_id for a in m_accounts]
+                m_token_map = get_mgid_token_map(m_ids)  # api_client_id -> token
+
+                m_executor = ThreadPoolExecutor(max_workers=5)  # MGID 併發 6+ 會 429
+                try:
+                    def _fetch_m(acc):
+                        token = m_token_map.get(acc.account_id)
+                        if not token:
+                            return (acc, None, 'No MGID token')
+                        try:
+                            client = MgidClient(token)
+                            smap = client.fetch_daily_stats(
+                                acc.account_id, target_date, target_date, acc.cv_definition)
+                            return (acc, smap, None)
+                        except Exception as e:
+                            return (acc, None, str(e))
+
+                    futures = {m_executor.submit(_fetch_m, acc): acc for acc in m_accounts}
+                    for future in as_completed(futures):
+                        acc, smap, err = future.result()
+                        if err:
+                            yield f"data: {json.dumps({'msg': f'  [M] {acc.account_id} 略過: {err}'})}\n\n"
+                            continue
+                        key = (acc.account_id, target_date)
+                        stats = smap.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                        self._upsert_stats(acc.account_id, target_date, stats)
+                        log_msg = f"    [M] {acc.account_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
+                        yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                finally:
+                    m_executor.shutdown(wait=False)
+                yield f"data: {json.dumps({'msg': f'  M Platform processed ({len(m_accounts)} accounts).'})}\n\n"
 
             elapsed = time.time() - start_time
             time_str = f"{int(elapsed // 60)}分{int(elapsed % 60)}秒({int(elapsed)}秒)"
