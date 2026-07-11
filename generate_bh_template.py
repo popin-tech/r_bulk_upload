@@ -56,8 +56,8 @@ for row in ws.iter_rows(min_row=2, max_row=1000):
 # --- Data Validation ---
 
 # 1. Platform (Col A)
-dv_platform = DataValidation(type="list", formula1='"R,D"', allow_blank=False)
-dv_platform.error = '必須填寫 R 或 D'
+dv_platform = DataValidation(type="list", formula1='"R,D,M"', allow_blank=False)
+dv_platform.error = '必須填寫 R、D 或 M'
 dv_platform.errorTitle = '輸入錯誤'
 ws.add_data_validation(dv_platform)
 dv_platform.add('A2:A1000')
@@ -68,9 +68,10 @@ cv_options = [
     'AddToCart', 
     'ViewContent', 
     'Checkout', 
-    'Bookmark', 
-    'Search', 
-    'CompleteRegistration'
+    'Bookmark',
+    'Search',
+    'CompleteRegistration',
+    'conversionsInterest', 'conversionsDecision', 'conversionsBuy',  # MGID(M) 專用
 ]
 # Create formula string "Option1,Option2,..."
 dv_formula = '"' + ','.join(cv_options) + '"'
