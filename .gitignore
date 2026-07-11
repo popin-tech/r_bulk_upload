@@ -11,3 +11,6 @@ instance/
 config/service_account.json
 poc/
 .env
+
+# subagent-driven-development scratch/ledger
+.superpowers/

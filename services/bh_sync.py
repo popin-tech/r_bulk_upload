@@ -3,9 +3,10 @@ import json
 import logging
 import random
 from datetime import datetime, timedelta, date
-from database import db, BHAccount, BHDailyStats, get_d_token, get_d_token_map
+from database import db, BHAccount, BHDailyStats, get_d_token, get_d_token_map, get_mgid_token_map
 from services.bh_clients.r_client import RixbeeClient
 from services.bh_clients.d_client import DiscoveryClient
+from services.bh_clients.m_client import MgidClient
 from flask import current_app
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
@@ -162,7 +163,35 @@ class BHSyncService:
                             
                         except Exception as e:
                             yield f"data: {json.dumps({'msg': f'  Error: {e}', 'type': 'error'})}\n\n"
-            
+
+                elif account.platform == 'M':
+                    from database import get_mgid_token
+                    token_row = get_mgid_token(account_id)
+                    if not token_row:
+                        yield f"data: {json.dumps({'msg': f'No MGID Token found for this account.', 'type': 'error'})}\n\n"
+                        return
+                    m_client = MgidClient(token_row.token)
+
+                    batch_size = 90  # MGID 單次區間上限 90 天
+                    for i in range(0, total_days, batch_size):
+                        batch = dates_to_sync[i:i+batch_size]
+                        s_str = batch[0].strftime('%Y-%m-%d')
+                        e_str = batch[-1].strftime('%Y-%m-%d')
+                        yield f"data: {json.dumps({'msg': f'Fetching {s_str} ~ {e_str}...'})}\n\n"
+                        try:
+                            m_map = m_client.fetch_daily_stats(str(account_id), s_str, e_str, account.cv_definition)
+                            for target_date in batch:
+                                target_str = target_date.strftime('%Y-%m-%d')
+                                key = (str(account_id), target_str)
+                                stats = m_map.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                                self._upsert_stats(account_id, target_str, stats, app=app)
+                                log_msg = f"  [{target_str}] Spend: {int(stats.get('spend', 0))} | Imp: {stats.get('impressions', 0)} | Click: {stats.get('clicks', 0)} | Conv: {stats.get('conversions', 0)}"
+                                print(f"[BH-FullSync-M] ID:{account_id} {log_msg}", flush=True)
+                                yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                            yield f"data: {json.dumps({'msg': f'  -> Saved.'})}\n\n"
+                        except Exception as e:
+                            yield f"data: {json.dumps({'msg': f'  Error: {e}', 'type': 'error'})}\n\n"
+
             yield f"data: {json.dumps({'msg': 'Full Sync Completed!', 'done': True})}\n\n"
             
         except Exception as e:
@@ -205,7 +234,8 @@ class BHSyncService:
             # Group by Platform
             r_accounts = [a for a in accounts if a.platform == 'R']
             d_accounts = [a for a in accounts if a.platform == 'D']
-            
+            m_accounts = [a for a in accounts if a.platform == 'M']
+
             # Randomize D platform accounts to prevent same accounts always failing on API instability
             if d_accounts:
                 random.shuffle(d_accounts)
@@ -312,6 +342,41 @@ class BHSyncService:
                         yield f"data: {json.dumps({'msg': f'  Error in D Token Batch: {str(e)}', 'type': 'error'})}\n\n"
 
                 yield f"data: {json.dumps({'msg': f'  D Platform processed.'})}\n\n"
+
+            # --- Process M Platform (MGID, 併發 <=5 + 429 退避) ---
+            if m_accounts:
+                yield f"data: {json.dumps({'msg': f'Processing {len(m_accounts)} M-Platform accounts (MGID)...'})}\n\n"
+                m_ids = [a.account_id for a in m_accounts]
+                m_token_map = get_mgid_token_map(m_ids)  # api_client_id -> token
+
+                m_executor = ThreadPoolExecutor(max_workers=5)  # MGID 併發 6+ 會 429
+                try:
+                    def _fetch_m(acc):
+                        token = m_token_map.get(acc.account_id)
+                        if not token:
+                            return (acc, None, 'No MGID token')
+                        try:
+                            client = MgidClient(token)
+                            smap = client.fetch_daily_stats(
+                                acc.account_id, target_date, target_date, acc.cv_definition)
+                            return (acc, smap, None)
+                        except Exception as e:
+                            return (acc, None, str(e))
+
+                    futures = {m_executor.submit(_fetch_m, acc): acc for acc in m_accounts}
+                    for future in as_completed(futures):
+                        acc, smap, err = future.result()
+                        if err:
+                            yield f"data: {json.dumps({'msg': f'  [M] {acc.account_id} 略過: {err}'})}\n\n"
+                            continue
+                        key = (acc.account_id, target_date)
+                        stats = smap.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                        self._upsert_stats(acc.account_id, target_date, stats)
+                        log_msg = f"    [M] {acc.account_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
+                        yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                finally:
+                    m_executor.shutdown(wait=False)
+                yield f"data: {json.dumps({'msg': f'  M Platform processed ({len(m_accounts)} accounts).'})}\n\n"
 
             elapsed = time.time() - start_time
             time_str = f"{int(elapsed // 60)}分{int(elapsed % 60)}秒({int(elapsed)}秒)"
@@ -538,6 +603,34 @@ class BHSyncService:
                                         
                                 logs.append(f"     D-Platform: Processed {len(missing_dates)} days.")
                                 print(f"[Worker-Log]   -> D-Platform {acc_id} Finished.", flush=True)
+
+                        elif platform == 'M':
+                            from database import get_mgid_token
+                            token_row = get_mgid_token(acc_id)
+                            if not token_row:
+                                logs.append(f"[M] {acc_id} 無 MGID token，略過")
+                                return logs
+                            m_client = MgidClient(token_row.token)
+                            # 缺漏日切連續段（每段 <=90 天）
+                            seg = [missing_dates[0]]
+                            segments = []
+                            for d in missing_dates[1:]:
+                                if (d - seg[-1]).days == 1 and len(seg) < 90:
+                                    seg.append(d)
+                                else:
+                                    segments.append(seg); seg = [d]
+                            segments.append(seg)
+                            for segment in segments:
+                                s_str = segment[0].strftime('%Y-%m-%d')
+                                e_str = segment[-1].strftime('%Y-%m-%d')
+                                try:
+                                    m_map = m_client.fetch_daily_stats(str(acc_id), s_str, e_str, cv_def)
+                                    for td in segment:
+                                        tstr = td.strftime('%Y-%m-%d')
+                                        stats = m_map.get((str(acc_id), tstr), {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                                        self._upsert_stats(acc_id, tstr, stats)
+                                except Exception as e:
+                                    logs.append(f"[M] {acc_id} {s_str}~{e_str} error: {e}")
 
                 except Exception as e:
                     logs.append(f"Error processing {acc_id}: {str(e)}")

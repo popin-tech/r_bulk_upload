@@ -52,7 +52,7 @@ class BHService:
                 platform = str(row.get('平台', '')).strip().upper()
                 acc_id = str(row.get('AccID', '')).strip()
                 
-                if platform not in ['R', 'D']:
+                if platform not in ['R', 'D', 'M']:
                     results['errors'].append(f"Row {index+2}: Invalid Platform '{platform}'")
                     continue
                 if not acc_id:
@@ -155,6 +155,28 @@ class BHService:
                                 account_source='budget_hunter'
                             )
                             db.session.add(new_token)
+
+                # --- M Platform Token Logic（MGID，一帳一 token，鍵 api_client_id＝AccID）---
+                if platform == 'M':
+                    from database import MgidToken
+                    m_token_val = None
+                    for col in ('M Token', 'Token', 'token'):
+                        if col in row and pd.notna(row[col]):
+                            m_token_val = str(row[col]).strip()
+                            break
+                    if m_token_val:
+                        existing = MgidToken.query.filter_by(api_client_id=acc_id).first()
+                        if existing:
+                            if existing.token != m_token_val:
+                                existing.token = m_token_val
+                                existing.updated_time = datetime.utcnow()
+                        else:
+                            db.session.add(MgidToken(
+                                api_client_id=acc_id,
+                                client_name=(account.account_name or acc_id),
+                                token=m_token_val,
+                                source='adtools',
+                            ))
 
                 # --- AE Mapping Logic (New Requirement) ---
                 ae_names_str = str(row.get('ae_name', '')).strip() if pd.notna(row.get('ae_name')) else ""

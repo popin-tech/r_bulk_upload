@@ -8,7 +8,7 @@ class BHAccount(db.Model):
     __tablename__ = 'bh_accounts'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    platform = db.Column(db.Enum('R', 'D'), nullable=False, comment='廣告平台: R/D')
+    platform = db.Column(db.Enum('R', 'D', 'M'), nullable=False, comment='廣告平台: R/D/M')
     agent = db.Column(db.Integer, nullable=True, comment='R平台代理商(7168=4A, 7161=台客)') 
     account_id = db.Column(db.String(50), nullable=False, comment='平台帳戶ID')
     account_name = db.Column(db.String(255), nullable=False, comment='帳戶名稱')
@@ -151,6 +151,35 @@ def get_r_token_by_email(email):
         db.func.lower(RAccountToken.email) == email.lower()
     ).first()
     return row.token if row else None
+
+
+class MgidToken(db.Model):
+    # 共用庫 nexus.mgid_tokens（跨工具單一真相，MGID 一帳一 token，唯一鍵 api_client_id）。
+    # 與 D 不同：無 dctool 鏡像、無 30s 同步，全 source='adtools'。查詢鍵一律 api_client_id。
+    __tablename__ = 'mgid_tokens'
+    __table_args__ = {'schema': 'nexus'}
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    api_client_id = db.Column(db.String(64), nullable=False)   # URL 路徑用 id（86xxxx）
+    client_name = db.Column(db.String(255), nullable=False)
+    token = db.Column(db.Text, nullable=False)
+    source = db.Column(db.Enum('adtools'), nullable=False, default='adtools')
+    created_time = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+def get_mgid_token(api_client_id):
+    """取單一 MGID 帳號 token row（唯一鍵 api_client_id）；無則回 None。"""
+    return MgidToken.query.filter_by(api_client_id=str(api_client_id)).first()
+
+
+def get_mgid_token_map(api_client_ids):
+    """批次取 {api_client_id: token}。"""
+    ids = [str(a) for a in api_client_ids]
+    if not ids:
+        return {}
+    rows = MgidToken.query.filter(MgidToken.api_client_id.in_(ids)).all()
+    return {r.api_client_id: r.token for r in rows}
 
 
 class User(db.Model):
