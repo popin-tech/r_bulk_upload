@@ -1,8 +1,5 @@
 import time
 import requests
-import logging
-
-logger = logging.getLogger(__name__)
 
 # MGID 可選轉換 metric（比照 R 的 cv_definition，帳戶層可設定要加總哪幾個）
 # 已用真 token 打 statistics-reports 實測驗證：這三個欄位名真實存在於回應中
@@ -12,9 +9,11 @@ MGID_CV_METRICS = ['conversionsInterest', 'conversionsDecision', 'conversionsBuy
 
 def _flatten_amount(v):
     """MGID 金額欄位是物件 {'amount':'20','currency':'TWD'}；攤平取 amount。
-    也容忍 API 直接回數字/字串的情形。"""
+    也容忍 API 直接回數字/字串（含千分位逗號）的情形。"""
     if isinstance(v, dict):
         v = v.get('amount', 0)
+    if isinstance(v, str):
+        v = v.replace(',', '')  # 防禦：MGID 若回帶千分位的金額字串，避免 float() 噴錯靜默丟 0
     try:
         return float(v or 0)
     except (ValueError, TypeError):
@@ -62,10 +61,12 @@ class MgidClient:
         cv_metrics = self._resolve_cv_metrics(cv_definition)
 
         url = f"{self.BASE_URL}/goodhits/clients/{api_client_id}/statistics-reports"
-        # ISO8601；日界含整日
+        # 日界用台北 +08:00：MGID 的 day 維度以帳戶當地時區（Asia/Taipei）分桶。
+        # 實測用 UTC 'Z' 日界會多回邊界那天的整日列（day=end+1，雖不會被寫入但多餘）；
+        # 改用 +08:00 對齊整日、回應乾淨，也與 R client 既有的 timezone=UTC+8 一致。
         params = [
-            ('filters[dateRange][dateFrom]', f'{start_date}T00:00:00.000Z'),
-            ('filters[dateRange][dateTo]', f'{end_date}T23:59:59.999Z'),
+            ('filters[dateRange][dateFrom]', f'{start_date}T00:00:00.000+08:00'),
+            ('filters[dateRange][dateTo]', f'{end_date}T23:59:59.999+08:00'),
             ('dimensions[]', 'day'),
             ('metrics[]', 'impressions'),
             ('metrics[]', 'clicks'),
