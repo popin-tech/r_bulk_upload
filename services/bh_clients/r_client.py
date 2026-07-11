@@ -75,88 +75,64 @@ class RixbeeClient:
             logger.error(f"Rixbee all token types failed, last error: {last_err}")
         return last_data
 
+    def _post_with_retry(self, url, headers, json_body, timeout=60, max_retries=4):
+        """暫時性錯誤退避重試（逾時/連線錯誤/429/5xx）。
+        R 的業務錯誤碼（如 1003 每日上限）以 HTTP 200 + status.code 回傳、非暫時性，
+        由呼叫端處理、不在此重試。退避節奏對稱 D client。"""
+        resp = None
+        for attempt in range(max_retries + 1):
+            try:
+                resp = requests.post(url, headers=headers, json=json_body, timeout=timeout)
+                if (resp.status_code == 429 or resp.status_code >= 500) and attempt < max_retries:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                return resp
+            except requests.RequestException as e:
+                if attempt < max_retries:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                raise e
+        return resp
+
     def _fetch_with_token(self, token_type: str, account_ids: list[str], start_date: str, end_date: str) -> list[dict]:
         creds = self.TOKENS.get(token_type)
         if not creds:
             raise ValueError(f"Invalid token type: {token_type}")
 
-        # Construct params
-        # Note: rixbee.php uses &user_id[]=123 for accounts. 
-        # Requests handles list params if passed as a list of tuples or list with '[]' in key?
-        # Let's inspect PHP: `&user_id[]=` . $accountId
-        
-        params = [
-            ('start_date', start_date),
-            ('end_date', end_date),
-            ('timezone', 'UTC+8'),
-            ('currency', 'TWD'),
-            ('dimensions[]', 'day'),
-            #('dimensions[]', 'group_id'), # Removed to aggregate by account/day only? 
-            # User requirement: "昨日花費" per account. 
-            # PHP script fetches detailed breakdown (group, cr_id, etc.)
-            # But BH only needs Account-level daily Stats.
-            # Let's check implementation_plan: "bh_daily_stats (Daily Performance)"
-            # So we should aggregate by Account + Day.
-            # However, the API might require specific dimensions. 
-            # PHP usages: dimensions[]=day, country, group_id, cr_id, cpg_id, ad_channel, ad_target
-            # If I drop them, maybe the API fails?
-            # Let's try to fetch minimal dimensions first: day. 
-            # Wait, `user_id` in calls seems to be the "Account ID" (from PHP: $this->rixbeeAccountIds passed as user_id[]).
-            # So we group by user_id implicitly if we query multiple?
-            # Let's keep it simple: Query by Account ID list, dimension=day.
-        ]
-        
-        # Add dimensions
-        # If we only want account-level, maybe we don't need group_id/cr_id.
-        # But to be safe and consistent with PHP, if PHP fetches all, maybe we can too?
-        # But for BH, we only store account-day summaries. 
-        # Aggregating locally is fine.
-        params.append(('dimensions[]', 'day'))
-        params.append(('dimensions[]', 'user_id')) # Ensure user_id is returned in data
-        
-        # Add headers (none needed if auth is in params)
-        headers = {}
-        
-        # Add auth to params (PHP implementation uses query string)
-        # Note: requests params dict/list is automatically URL-encoded.
-        params.append(('x-userid', creds['user_id']))
-        params.append(('x-authorization', creds['token']))
-        
-        # Add account IDs (user_id[])
-        # In requests, duplicate keys are handled by passing a list of tuples
-        for aid in account_ids:
-            params.append(('user_id[]', aid))
+        # 認證走 header：避免 token 出現在 URL query string 被各層存取日誌記錄（安全性）
+        headers = {
+            'x-userid': creds['user_id'],
+            'x-authorization': creds['token'],
+            'Content-Type': 'application/json',
+        }
 
-        # Debug Logging - Removed per user request
-        # print(f"\n====== R API REQUEST ({token_type}) ======", flush=True)
-        # ...
-        
-        response = requests.get(self.API_URL, headers=headers, params=params, timeout=60)
-        
-        # print(f"====== R API RESPONSE ({response.status_code}) ======", flush=True)
+        # 參數走 POST JSON body。start/end 補分頁上界：R API 預設 end=500 會靜默截斷。
+        body = {
+            'start_date': start_date,
+            'end_date': end_date,
+            'timezone': 'UTC+8',
+            'currency': 'TWD',
+            'dimensions': ['day', 'user_id'],   # user_id 確保回應可依帳號拆分
+            'user_id': [str(a) for a in account_ids],
+            'start': 0,
+            'end': 10000,
+        }
 
-        
+        response = self._post_with_retry(self.API_URL, headers, body, timeout=60)
 
-        
         if response.status_code != 200:
             raise Exception(f"API Error {response.status_code}: {response.text}")
 
         res_json = response.json()
-        
-        # Check 'status' in body
-        # PHP: if($resAry['status']['code'] != 0)
+
+        # 業務錯誤：status.code != 0（如 1003 每日上限）中止並帶訊息
         status = res_json.get('status', {})
         code = status.get('code')
         if code != 0:
             msg = status.get('message', 'Unknown Error')
-            # Map specific errors as per PHP
-            # '1000' => 'R API 異常', '1003' => '每日上限', etc.
             raise Exception(f"Rixbee API Code {code}: {msg}")
 
-        # Data is in res_json['data']['data']
-        # Structure: list of dicts
-        # items has 'payment_revenue' (Spend), 'behaviorX' (CVs)
-        
+        # 資料在 data.data（每列含 payment_revenue 花費、behavior0-6 轉換）
         return res_json.get('data', {}).get('data', [])
 
     def process_daily_stats(self, raw_data: list[dict], cv_definition: str = None) -> dict:
