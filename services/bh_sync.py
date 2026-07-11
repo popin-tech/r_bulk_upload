@@ -163,7 +163,35 @@ class BHSyncService:
                             
                         except Exception as e:
                             yield f"data: {json.dumps({'msg': f'  Error: {e}', 'type': 'error'})}\n\n"
-            
+
+                elif account.platform == 'M':
+                    from database import get_mgid_token
+                    token_row = get_mgid_token(account_id)
+                    if not token_row:
+                        yield f"data: {json.dumps({'msg': f'No MGID Token found for this account.', 'type': 'error'})}\n\n"
+                        return
+                    m_client = MgidClient(token_row.token)
+
+                    batch_size = 90  # MGID 單次區間上限 90 天
+                    for i in range(0, total_days, batch_size):
+                        batch = dates_to_sync[i:i+batch_size]
+                        s_str = batch[0].strftime('%Y-%m-%d')
+                        e_str = batch[-1].strftime('%Y-%m-%d')
+                        yield f"data: {json.dumps({'msg': f'Fetching {s_str} ~ {e_str}...'})}\n\n"
+                        try:
+                            m_map = m_client.fetch_daily_stats(str(account_id), s_str, e_str, account.cv_definition)
+                            for target_date in batch:
+                                target_str = target_date.strftime('%Y-%m-%d')
+                                key = (str(account_id), target_str)
+                                stats = m_map.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                                self._upsert_stats(account_id, target_str, stats, app=app)
+                                log_msg = f"  [{target_str}] Spend: {int(stats.get('spend', 0))} | Imp: {stats.get('impressions', 0)} | Click: {stats.get('clicks', 0)} | Conv: {stats.get('conversions', 0)}"
+                                print(f"[BH-FullSync-M] ID:{account_id} {log_msg}", flush=True)
+                                yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                            yield f"data: {json.dumps({'msg': f'  -> Saved.'})}\n\n"
+                        except Exception as e:
+                            yield f"data: {json.dumps({'msg': f'  Error: {e}', 'type': 'error'})}\n\n"
+
             yield f"data: {json.dumps({'msg': 'Full Sync Completed!', 'done': True})}\n\n"
             
         except Exception as e:
@@ -575,6 +603,34 @@ class BHSyncService:
                                         
                                 logs.append(f"     D-Platform: Processed {len(missing_dates)} days.")
                                 print(f"[Worker-Log]   -> D-Platform {acc_id} Finished.", flush=True)
+
+                        elif platform == 'M':
+                            from database import get_mgid_token
+                            token_row = get_mgid_token(acc_id)
+                            if not token_row:
+                                logs.append(f"[M] {acc_id} 無 MGID token，略過")
+                                return logs
+                            m_client = MgidClient(token_row.token)
+                            # 缺漏日切連續段（每段 <=90 天）
+                            seg = [missing_dates[0]]
+                            segments = []
+                            for d in missing_dates[1:]:
+                                if (d - seg[-1]).days == 1 and len(seg) < 90:
+                                    seg.append(d)
+                                else:
+                                    segments.append(seg); seg = [d]
+                            segments.append(seg)
+                            for segment in segments:
+                                s_str = segment[0].strftime('%Y-%m-%d')
+                                e_str = segment[-1].strftime('%Y-%m-%d')
+                                try:
+                                    m_map = m_client.fetch_daily_stats(str(acc_id), s_str, e_str, cv_def)
+                                    for td in segment:
+                                        tstr = td.strftime('%Y-%m-%d')
+                                        stats = m_map.get((str(acc_id), tstr), {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                                        self._upsert_stats(acc_id, tstr, stats)
+                                except Exception as e:
+                                    logs.append(f"[M] {acc_id} {s_str}~{e_str} error: {e}")
 
                 except Exception as e:
                     logs.append(f"Error processing {acc_id}: {str(e)}")
