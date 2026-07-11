@@ -590,48 +590,37 @@ git commit -m "feat(bh): 上傳與 Excel 模板放行 MGID(M)，token upsert 進
 
 ---
 
-## Task 7: 前端 `bh.html` M 呈現
+## Task 7: 前端 `bh.html` M 呈現（badge only）
+
+> **範圍收斂（已查證）**：既有前端**沒有任何 cv_definition 編輯器**（R 也沒有），且更新路由 `bh_update_account` 不處理 `cv_definition`——`cv_definition` 是「Excel 上傳專屬」欄位。M 比照 R：cv 走 Excel 設定（Task 6 已完成），詳情面板**不加** cv 編輯器（加了也存不進去、且 R 沒有、不一致）。本 task 只加 **M badge 顏色**，不動更新路由。
 
 **Files:**
-- Modify: `templates/bh.html`（platform badge、平台顯示、M 的轉換設定 UI）
+- Modify: `templates/bh.html`（platform badge 顏色加 M）
 
 **Interfaces:**
-- Consumes: 後端回傳的 `acc.platform === 'M'`、`acc.cv_definition`。
-- Produces: M 帳戶在清單/詳情正確顯示。
+- Consumes: 後端回傳的 `acc.platform === 'M'`。
+- Produces: M 帳戶在清單以可辨識 badge 顯示（平台文字 `[[ acc.platform ]]` 既有邏輯已自動顯示 M）。
 
-- [ ] **Step 1: badge 顏色與平台顯示**
+- [ ] **Step 1: badge 顏色加 M**
 
-`bh.html` line 167 附近 badge `:style` 三元運算擴充為含 M（給 M 一個可辨識色，如綠色）：
+`bh.html` line 167 附近 badge `:style` 三元運算擴充為含 M（給 M 一個可辨識色，如綠色 `#198754`）：
 ```html
 :style="acc.platform === 'R' ? 'background:#0d6efd;border:1px solid #0d6efd;' : (acc.platform === 'M' ? 'background:#198754;border:1px solid #198754;' : 'background:transparent;border:1px solid white;')"
 ```
+（其餘平台文字顯示、詳情面板共同欄位皆走既有邏輯，不需改動。R 的 agent select、D 的 token 欄位維持原樣。）
 
-- [ ] **Step 2: M 的轉換設定 UI（比照 R 的 cv 區塊）**
+- [ ] **Step 2: 驗證**
 
-`bh.html` line 278 附近 `v-if="selectedAccount.platform === 'D'"` 之外，為 M 加一個轉換定義輸入（沿用 `cv_definition`，選項為 MGID 三事件）：
-```html
-<div class="row mb-3" v-if="selectedAccount.platform === 'M'">
-    <label class="col-sm-4 col-form-label">轉換定義 (MGID)</label>
-    <div class="col-sm-8">
-        <select class="form-select glass-input" v-model="selectedAccount.cv_definition">
-            <option value="conversionsBuy">Buy（購買）</option>
-            <option value="conversionsDecision">Decision（決策）</option>
-            <option value="conversionsInterest">Interest（興趣）</option>
-        </select>
-    </div>
-</div>
-```
+- 靜態確認：`grep -n "198754" templates/bh.html` 有該色；badge `:style` 三元式語法正確（含 R / M / 其他三分支）。
+- 若能啟動 app：開 `/bh`，M 帳戶顯示綠色 M badge、平台欄顯示 `M`。（無法起 app 時，以靜態檢查為準並說明。）
+- 確認未新增任何非功能性 UI（不加存不進去的 cv 編輯器）。
+Expected: M badge 綠色正確顯示；R/D 呈現不變。
 
-- [ ] **Step 3: 手動驗證前端**
-
-啟動 app，開 `/bh`，確認 M 帳戶顯示綠色 M badge，點開詳情可設定並存回轉換定義（存回走既有 `/api/bh/account/<id>` POST，該 route 已處理 `cv_definition`——實作前確認 line 234 附近該 route 有帶 `cv_definition`，若無則一併補）。
-Expected: M badge 正確；轉換定義可存可讀。
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add templates/bh.html
-git commit -m "feat(bh): 前端 bh.html 新增 MGID(M) badge 與轉換定義設定 UI"
+git commit -m "feat(bh): 前端 bh.html 新增 MGID(M) badge 顏色"
 ```
 
 ---
