@@ -71,7 +71,6 @@ cv_options = [
     'Bookmark',
     'Search',
     'CompleteRegistration',
-    'conversionsInterest', 'conversionsDecision', 'conversionsBuy',  # MGID(M) 專用
 ]
 # Create formula string "Option1,Option2,..."
 dv_formula = '"' + ','.join(cv_options) + '"'
