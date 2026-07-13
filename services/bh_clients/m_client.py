@@ -1,10 +1,9 @@
 import time
 import requests
 
-# MGID 可選轉換 metric（比照 R 的 cv_definition，帳戶層可設定要加總哪幾個）
-# 已用真 token 打 statistics-reports 實測驗證：這三個欄位名真實存在於回應中
-# （多帳號樣本：860507/860509/860511 等實際回傳非零值，非僅預設 0）。
-MGID_CV_METRICS = ['conversionsInterest', 'conversionsDecision', 'conversionsBuy']
+# MGID 轉換固定用 conversionsBuy（買家轉換）：不再由 Excel「R的cv定義」下拉選，直接鎖定為預設。
+# 已用真 token 打 statistics-reports 實測驗證此欄位名真實存在且回傳非零值。
+MGID_CV_METRICS = ['conversionsBuy']
 
 
 def _flatten_amount(v):
@@ -47,18 +46,11 @@ class MgidClient:
                 raise e
         return resp
 
-    def _resolve_cv_metrics(self, cv_definition):
-        """把帳戶的 cv_definition 字串解析成要加總的 MGID 轉換 metric 清單。
-        比照 R：逗號分隔、大小寫不敏感；未設定則不算轉換（回空）。"""
-        if not cv_definition:
-            return []
-        wanted = {s.strip().lower() for s in cv_definition.split(',') if s.strip()}
-        return [m for m in MGID_CV_METRICS if m.lower() in wanted]
-
-    def fetch_daily_stats(self, api_client_id, start_date, end_date, cv_definition=None):
+    def fetch_daily_stats(self, api_client_id, start_date, end_date):
         """抓 MGID 日報表，回統一 map（key 的 account_id＝api_client_id）。
-        單次 API 區間上限 90 天，呼叫端須自行切段（見 bh_sync）。"""
-        cv_metrics = self._resolve_cv_metrics(cv_definition)
+        單次 API 區間上限 90 天，呼叫端須自行切段（見 bh_sync）。
+        MGID 轉換固定用 conversionsBuy，不吃 Excel 的 cv 定義。"""
+        cv_metrics = MGID_CV_METRICS
 
         url = f"{self.BASE_URL}/goodhits/clients/{api_client_id}/statistics-reports"
         # 日界用台北 +08:00：MGID 的 day 維度以帳戶當地時區（Asia/Taipei）分桶。

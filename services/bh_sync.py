@@ -179,7 +179,7 @@ class BHSyncService:
                         e_str = batch[-1].strftime('%Y-%m-%d')
                         yield f"data: {json.dumps({'msg': f'Fetching {s_str} ~ {e_str}...'})}\n\n"
                         try:
-                            m_map = m_client.fetch_daily_stats(str(account_id), s_str, e_str, account.cv_definition)
+                            m_map = m_client.fetch_daily_stats(str(account_id), s_str, e_str)
                             for target_date in batch:
                                 target_str = target_date.strftime('%Y-%m-%d')
                                 key = (str(account_id), target_str)
@@ -358,7 +358,7 @@ class BHSyncService:
                         try:
                             client = MgidClient(token)
                             smap = client.fetch_daily_stats(
-                                acc.account_id, target_date, target_date, acc.cv_definition)
+                                acc.account_id, target_date, target_date)
                             return (acc, smap, None)
                         except Exception as e:
                             return (acc, None, str(e))
@@ -624,7 +624,7 @@ class BHSyncService:
                                 s_str = segment[0].strftime('%Y-%m-%d')
                                 e_str = segment[-1].strftime('%Y-%m-%d')
                                 try:
-                                    m_map = m_client.fetch_daily_stats(str(acc_id), s_str, e_str, cv_def)
+                                    m_map = m_client.fetch_daily_stats(str(acc_id), s_str, e_str)
                                     for td in segment:
                                         tstr = td.strftime('%Y-%m-%d')
                                         stats = m_map.get((str(acc_id), tstr), {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
