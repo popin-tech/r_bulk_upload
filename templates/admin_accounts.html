@@ -160,6 +160,10 @@
                         <div v-if="formError" class="alert alert-danger py-2 small mb-3">[[ formError ]]</div>
                         <div class="mb-3">
                             <label class="form-label">Account Email</label>
+                            <div class="form-text text-warning small mt-0 mb-2">
+                                <i class="fas fa-exclamation-triangle me-1"></i>請填寫開帳戶時的 Email！
+                                （即該廣告帳號在 R 平台的登入帳號，非 AE 個人信箱；填錯會換不到 token）
+                            </div>
                             <input type="email" class="form-control" v-model="form.email" placeholder="example@popin.cc" @keyup.enter="confirmForm">
                         </div>
                         <div class="mb-3">

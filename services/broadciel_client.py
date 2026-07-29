@@ -1,8 +1,30 @@
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional
 
 import requests
+
+
+class ThrottledSession(requests.Session):
+    """節流版 Session：R 平台限流 5 QPS，超過會回 429 並罰等 180 秒。
+
+    下載整個帳號結構時 fetch_all_ad_groups 會對每個 group 各打一次明細（N+1），
+    不節流的話幾十個 request 會在 2~3 秒內連發，必定觸發限流。
+    """
+
+    MIN_INTERVAL = 0.25  # 4 req/s，對 5 QPS 上限保留兩成餘裕
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._last_request_at = 0.0
+
+    def request(self, method, url, **kwargs):
+        wait = self._last_request_at + self.MIN_INTERVAL - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        self._last_request_at = time.monotonic()
+        return super().request(method, url, **kwargs)
 
 
 class BroadcielClient:
@@ -21,7 +43,7 @@ class BroadcielClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.session = session or requests.Session()
+        self.session = session or ThrottledSession()
         self._api_token = None  # 私有變數存放交換後的 API token
         
         # 如果提供了 account_email 和 raw_token，自動交換 API token
@@ -667,7 +689,13 @@ class BroadcielClient:
         # 檢查 HTTP 狀態碼
         if not resp.ok:
             error_message = response_data.get('message', 'Unknown error')
-            raise Exception(f"HTTP {resp.status_code}: {error_message}")
+            # 標示是「token 換發」階段失敗，否則外層只看到 HTTP 404 會誤判成功能壞掉。
+            # 404 Not Found 代表 account_name + api_token 這組在 R 平台查無資料
+            # （帳號填錯或 token 失效），並非端點不存在。
+            raise Exception(
+                f"Token exchange failed for account '{account_email}' "
+                f"(HTTP {resp.status_code}: {error_message})"
+            )
         
         # 檢查 API 回應中的 code 欄位
         if response_data.get("code") != 200:
