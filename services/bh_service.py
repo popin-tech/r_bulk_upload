@@ -11,7 +11,8 @@ class BHService:
     def process_excel_upload(self, file_stream, owner_email: str) -> dict:
         """
         Parse Excel file and import accounts into bh_accounts.
-        Format: Platform, AccID, Budget, StartDate, EndDate, CPCGoal, CPAGoal, CVDefinition, Token(Optional for D)
+        Format: Platform, AccID, Budget, StartDate, EndDate, CPCGoal, CPAGoal,
+        CVDefinition, D&MGID的Token（D 與 MGID 選填）
         """
         try:
             df = pd.read_excel(file_stream)
@@ -31,7 +32,7 @@ class BHService:
             'CPAGoal': 'cpa_goal',
             'CTRGoal': 'ctr_goal',
             'R的cv定義': 'cv_definition'
-            # 'Token': 'token' # Optional
+            # 'D&MGID的Token': 'token' # D 與 MGID 選填
         }
         
         # Check required columns (at least Platform, AccID, Budget, Start/End)
@@ -127,8 +128,10 @@ class BHService:
                 # --- D Platform Token Logic ---
                 if platform == 'D':
                     token_val = None
-                    # Prioritize 'D Token', then fallback to 'Token' / 'token'
-                    if 'D Token' in row and pd.notna(row['D Token']):
+                    # 新範本由 D 與 MGID 共用 Token 欄位；舊欄名保留相容。
+                    if 'D&MGID的Token' in row and pd.notna(row['D&MGID的Token']):
+                        token_val = str(row['D&MGID的Token']).strip()
+                    elif 'D Token' in row and pd.notna(row['D Token']):
                          token_val = str(row['D Token']).strip()
                     elif 'Token' in row and pd.notna(row['Token']):
                         token_val = str(row['Token']).strip()
@@ -160,7 +163,8 @@ class BHService:
                 if platform == 'M':
                     from database import MgidToken
                     m_token_val = None
-                    for col in ('M Token', 'Token', 'token'):
+                    # 新範本由 D 與 MGID 共用 Token 欄位；舊欄名保留相容。
+                    for col in ('D&MGID的Token', 'M Token', 'Token', 'token'):
                         if col in row and pd.notna(row[col]):
                             m_token_val = str(row[col]).strip()
                             break
@@ -582,5 +586,4 @@ class BHService:
                 'cpa': float(s.spend) / s.conversions if s.conversions > 0 else 0
             })
         return results
-
 

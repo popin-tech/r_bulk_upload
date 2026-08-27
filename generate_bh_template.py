@@ -11,7 +11,7 @@ ws = wb.active
 ws.title = "Import Template"
 
 # Headers
-headers = ['平台', 'AccID', '名稱', 'Budget', 'StartDate', 'EndDate', 'CPCGoal', 'CPAGoal', 'R的cv定義', 'Token']
+headers = ['平台', 'AccID', '名稱', 'Budget', 'StartDate', 'EndDate', 'CPCGoal', 'CPAGoal', 'R的cv定義', 'D&MGID的Token']
 ws.append(headers)
 
 # Style Headers
@@ -43,7 +43,7 @@ ws.column_dimensions['F'].width = 12  # EndDate
 ws.column_dimensions['G'].width = 10  # CPC
 ws.column_dimensions['H'].width = 10  # CPA
 ws.column_dimensions['I'].width = 25  # CV Def
-ws.column_dimensions['J'].width = 30  # Token
+ws.column_dimensions['J'].width = 30  # D 與 MGID 共用 Token
 
 # Apply formatting to all rows (1-1000)
 for row in ws.iter_rows(min_row=2, max_row=1000):
