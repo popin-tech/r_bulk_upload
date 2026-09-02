@@ -74,6 +74,15 @@ class BHSharedTokenColumnTest(unittest.TestCase):
             patch.object(bh_service, "BHAccount", _Account),
             patch.object(bh_service, "BHDAccountToken", _DToken),
             patch.object(database, "MgidToken", _MgidToken),
+            # 範本自 2026-09-02 起多了 P 與 V 兩列範例。V 的列在上傳時會去比對
+            # Firestore 影音目錄，測試環境沒有 D1_FIRESTORE_URI，故在此 mock 掉；
+            # 本測試要驗的是 D/MGID 共用 token 欄位，不是影音目錄。
+            patch("services.bh_clients.d1_video_catalog.d1_firestore_available",
+                  return_value=True),
+            patch("services.bh_clients.d1_video_catalog.list_video_campaigns",
+                  return_value=[]),
+            patch("services.bh_clients.d1_video_catalog.validate_account",
+                  return_value=(True, [])),
         ):
             result = bh_service.BHService().process_excel_upload(
                 TEMPLATE_PATH,
@@ -83,7 +92,8 @@ class BHSharedTokenColumnTest(unittest.TestCase):
         d_token = next(record for record in fake_db.session.added if isinstance(record, _DToken))
         m_token = next(record for record in fake_db.session.added if isinstance(record, _MgidToken))
 
-        self.assertEqual(result, {"total": 3, "inserted": 3, "errors": []})
+        # 範本五列：R / D / M / P / V
+        self.assertEqual(result, {"total": 5, "inserted": 5, "errors": []})
         self.assertEqual(d_token.token, expected_d_token)
         self.assertEqual(m_token.token, expected_m_token)
         self.assertTrue(fake_db.session.committed)
