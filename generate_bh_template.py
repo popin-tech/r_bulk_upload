@@ -46,6 +46,9 @@ data = [
     # P Platform（Prism）example：AccID＝廣告主 id，格式 233-688-3595。
     # 平台無轉換追蹤，CPAGoal 留空。
     ['P', '292-462-3142', 'Prism 範例帳戶', 80000, '2026-08-01', '2026-08-31', 12, None, '', ''],
+    # V Platform（D1 影音）example：AccID＝D1 影音帳戶字串，大小寫必須完全一致。
+    # 平台無轉換追蹤，CPAGoal 留空。
+    ['V', 'CPM_MundoPixarExperience', 'D1影音 範例帳戶', 150000, '2026-08-01', '2026-08-31', 20, None, '', ''],
 ]
 
 for row in data:
@@ -78,8 +81,8 @@ for row in ws.iter_rows(min_row=2, max_row=1000):
 # --- Data Validation ---
 
 # 1. Platform (Col A)
-dv_platform = DataValidation(type="list", formula1='"R,D,M,P"', allow_blank=False)
-dv_platform.error = '必須填寫 R、D、M 或 P（Prism）'
+dv_platform = DataValidation(type="list", formula1='"R,D,M,P,V"', allow_blank=False)
+dv_platform.error = '必須填寫 R、D、M、P（Prism）或 V（D1影音）'
 dv_platform.errorTitle = '輸入錯誤'
 ws.add_data_validation(dv_platform)
 dv_platform.add('A2:A1000')

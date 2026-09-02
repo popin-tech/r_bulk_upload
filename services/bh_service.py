@@ -53,20 +53,46 @@ class BHService:
             'errors': []
         }
 
+        # V（D1 影音）帳戶字串驗證：Excel 打錯一個字，Action4 只會查無資料回空，
+        # BH 會靜默記成花費 0——比報錯還危險。所以在上傳當下就比對 Firestore 目錄並給建議。
+        # 目錄有 5 分鐘快取，這裡主動預熱一次，整批上傳只會連一次 Firestore。
+        has_v_rows = any(str(r).strip().upper() == 'V' for r in df.get('平台', []))
+        v_catalog_error = None
+        if has_v_rows:
+            from services.bh_clients import d1_video_catalog
+            if not d1_video_catalog.d1_firestore_available():
+                v_catalog_error = '未設定 D1_FIRESTORE_URI，無法驗證 D1 影音帳戶，V 平台的列全部略過'
+            else:
+                try:
+                    d1_video_catalog.list_video_campaigns()
+                except Exception as e:
+                    v_catalog_error = f'連線 D1 影音目錄失敗（{e}），V 平台的列全部略過'
+
         for index, row in df.iterrows():
             results['total'] += 1
             try:
                 platform = str(row.get('平台', '')).strip().upper()
                 acc_id = str(row.get('AccID', '')).strip()
                 
-                # 註：'V'（D1 影音）刻意還沒放行——它的驗證與同步在 Task 11 才完成，
-                #     提前收下會建出永遠不會同步的帳戶。
-                if platform not in ['R', 'D', 'M', 'P']:
+                if platform not in ['R', 'D', 'M', 'P', 'V']:
                     results['errors'].append(f"Row {index+2}: Invalid Platform '{platform}'")
                     continue
                 if not acc_id:
                     results['errors'].append(f"Row {index+2}: Missing Account ID")
                     continue
+
+                if platform == 'V':
+                    if v_catalog_error:
+                        results['errors'].append(f"Row {index+2}: {v_catalog_error}")
+                        continue
+                    from services.bh_clients import d1_video_catalog
+                    ok, suggestions = d1_video_catalog.validate_account(acc_id)
+                    if not ok:
+                        hint = f"，你是不是要填「{suggestions[0]}」？" if suggestions else \
+                               "（大小寫必須完全一致；可用的帳戶清單見 D1 後台）"
+                        results['errors'].append(
+                            f"Row {index+2}: 查無 D1 影音帳戶「{acc_id}」{hint}")
+                        continue
 
                 # Parse Dates
                 try:

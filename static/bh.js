@@ -342,11 +342,12 @@ const app = createApp({
 
 
 
-        // 平台 badge 配色：R 藍 / M 綠 / P 紫 / D 透明底白框（維持原樣）。V 橘在 Task 11 加。
+        // 平台 badge 配色：R 藍 / M 綠 / P 紫 / V 橘 / D 透明底白框（維持原樣）
         const PLATFORM_COLORS = {
             R: '#0d6efd',
             M: '#198754',
             P: '#6f42c1',
+            V: '#fd7e14',
         };
         const platformBadgeStyle = (platform) => {
             const c = PLATFORM_COLORS[platform];

@@ -8,10 +8,30 @@ from services.bh_clients.r_client import RixbeeClient
 from services.bh_clients.d_client import DiscoveryClient
 from services.bh_clients.m_client import MgidClient
 from services.bh_clients.p_client import PrismClient
+from services.bh_clients.v_client import D1VideoClient
 from flask import current_app
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
 import os
+
+def segment_dates(dates, max_len):
+    """把排序過的日期清單切成「連續且長度 <= max_len」的段。純函式，供 V 分支與測試使用。
+
+    註：R（7 天）與 M（90 天）有各自的既有 inline 實作，本次不動它們（surgical changes）。
+    """
+    if not dates:
+        return []
+    segments = []
+    seg = [dates[0]]
+    for d in dates[1:]:
+        if (d - seg[-1]).days == 1 and len(seg) < max_len:
+            seg.append(d)
+        else:
+            segments.append(seg)
+            seg = [d]
+    segments.append(seg)
+    return segments
+
 
 class BHSyncService:
     @staticmethod
@@ -221,6 +241,29 @@ class BHSyncService:
                         yield f"data: {json.dumps({'msg': log_msg})}\n\n"
                     yield f"data: {json.dumps({'msg': f'  -> Saved.'})}\n\n"
 
+                elif account.platform == 'V':
+                    # Action4 區間上限 12 個月 ⇒ 依 360 天切段（留邊際，避免踩線後靜默回空）。
+                    v_client = D1VideoClient()
+                    for segment in segment_dates(dates_to_sync, 360):
+                        s_str = segment[0].strftime('%Y-%m-%d')
+                        e_str = segment[-1].strftime('%Y-%m-%d')
+                        yield f"data: {json.dumps({'msg': f'Fetching {s_str} ~ {e_str}...'})}\n\n"
+                        try:
+                            v_map = v_client.fetch_daily_stats(str(account_id), s_str, e_str)
+                        except Exception as e:
+                            # fail-closed：本段不寫任何一天（v_client 已保證是「全有或全無」）
+                            yield f"data: {json.dumps({'msg': f'  Error: {e}（{s_str}~{e_str} 未寫入）', 'type': 'error'})}\n\n"
+                            return
+                        for target_date in segment:
+                            target_str = target_date.strftime('%Y-%m-%d')
+                            stats = v_map.get((str(account_id), target_str),
+                                              {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                            self._upsert_stats(account_id, target_str, stats, app=app)
+                            log_msg = f"  [{target_str}] Spend: {int(stats.get('spend', 0))} | Imp: {stats.get('impressions', 0)} | Click: {stats.get('clicks', 0)}"
+                            print(f"[BH-FullSync-V] ID:{account_id} {log_msg}", flush=True)
+                            yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                        yield f"data: {json.dumps({'msg': f'  -> Saved.'})}\n\n"
+
             yield f"data: {json.dumps({'msg': 'Full Sync Completed!', 'done': True})}\n\n"
             
         except Exception as e:
@@ -265,6 +308,7 @@ class BHSyncService:
             d_accounts = [a for a in accounts if a.platform == 'D']
             m_accounts = [a for a in accounts if a.platform == 'M']
             p_accounts = [a for a in accounts if a.platform == 'P']
+            v_accounts = [a for a in accounts if a.platform == 'V']
 
             # Randomize D platform accounts to prevent same accounts always failing on API instability
             if d_accounts:
@@ -424,6 +468,37 @@ class BHSyncService:
                 except Exception as e:
                     # fail-closed：整批不寫（P 是一發全拿，本來就沒有部分成功的中間狀態）
                     yield f"data: {json.dumps({'msg': f'  Error in P Platform: {str(e)}（{len(p_accounts)} 個帳戶皆未寫入）', 'type': 'error'})}\n\n"
+
+            # --- Process V Platform (D1 影音：Firestore 清單 + Action4) ---
+            # 註：這裡的 max_workers 只是帳戶層的排程；對 Action4 的真正併發上限是
+            #     action4_client 模組層的 semaphore(6)，多的請求會排隊不會突破。
+            if v_accounts:
+                yield f"data: {json.dumps({'msg': f'Processing {len(v_accounts)} V-Platform accounts (D1 Video)...'})}\n\n"
+                v_client = D1VideoClient()
+                v_executor = ThreadPoolExecutor(max_workers=3)
+                try:
+                    def _fetch_v(acc):
+                        try:
+                            return acc, v_client.fetch_daily_stats(
+                                str(acc.account_id), target_date, target_date), None
+                        except Exception as e:
+                            return acc, None, str(e)
+
+                    futures = {v_executor.submit(_fetch_v, acc): acc for acc in v_accounts}
+                    for future in as_completed(futures):
+                        acc, vmap, err = future.result()
+                        if err:
+                            # fail-closed：這個帳戶今天完全不寫，留給補洞檢查重試
+                            yield f"data: {json.dumps({'msg': f'  [V] {acc.account_id} 未寫入: {err}', 'type': 'error'})}\n\n"
+                            continue
+                        stats = vmap.get((str(acc.account_id), target_date),
+                                         {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                        self._upsert_stats(acc.account_id, target_date, stats)
+                        log_msg = f"    [V] {acc.account_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
+                        yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                finally:
+                    v_executor.shutdown(wait=False)
+                yield f"data: {json.dumps({'msg': f'  V Platform processed ({len(v_accounts)} accounts).'})}\n\n"
 
             elapsed = time.time() - start_time
             time_str = f"{int(elapsed // 60)}分{int(elapsed % 60)}秒({int(elapsed)}秒)"
@@ -696,6 +771,24 @@ class BHSyncService:
                                                   {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
                                 self._upsert_stats(acc_id, tstr, stats)
                             logs.append(f"     P-Platform: Processed {len(missing_dates)} days.")
+
+                        elif platform == 'V':
+                            v_client = D1VideoClient()
+                            for segment in segment_dates(missing_dates, 360):
+                                s_str = segment[0].strftime('%Y-%m-%d')
+                                e_str = segment[-1].strftime('%Y-%m-%d')
+                                try:
+                                    v_map = v_client.fetch_daily_stats(str(acc_id), s_str, e_str)
+                                except Exception as e:
+                                    # fail-closed：本段不寫，下次補洞檢查會再抓一次
+                                    logs.append(f"[V] {acc_id} {s_str}~{e_str} error: {e}（未寫入）")
+                                    continue
+                                for td in segment:
+                                    tstr = td.strftime('%Y-%m-%d')
+                                    stats = v_map.get((str(acc_id), tstr),
+                                                      {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                                    self._upsert_stats(acc_id, tstr, stats)
+                            logs.append(f"     V-Platform: Processed {len(missing_dates)} days.")
 
                 except Exception as e:
                     logs.append(f"Error processing {acc_id}: {str(e)}")
