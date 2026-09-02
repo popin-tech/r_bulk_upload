@@ -112,6 +112,11 @@ missing_dates = sorted([d for d in needed_dates if d not in existing_dates_set])
 | **M1：P 上線** | 1–6 | P 平台完整可用（含 CPA/CV 顯示與正式 secret） |
 | **M2：V 上線** | 7–12 | V 平台完整可用 |
 
+> **執行決策（2026-09-02，與使用者確認）**：Task 1–5 完成後**不單獨部署 P**，
+> 改為先把 M2 的程式（Task 7–11）寫完，最後把 **Task 6 與 Task 12 合併成一次部署**。
+> 理由：只擾動線上一次。在那之前正式環境完全不動（Task 1 的 enum migration 除外，
+> 它是向後相容的，且已執行）。
+
 ---
 
 ## File Structure
@@ -2305,19 +2310,23 @@ git commit -m "feat(bh): V(D1影音) 三條同步路徑、上傳驗證、範本�
 - Consumes: Task 7–11 的全部成果
 - Produces: 正式環境的 V 平台可用
 
-- [ ] **Step 1: 建立 Secret Manager secret**
+- [ ] **Step 1: 重用既有的 Firestore secret（不要新建）**
 
-Run:
+> ✅ **執行時查證（2026-09-02）**：`popinpoc1` 的 Secret Manager **已經有
+> `ad-tools-d1videoad-firestore-uri`**（ad_tools tool#8 建的，就是同一組 D1 Firestore
+> 連線字串）。**不要再建一份 `D1_FIRESTORE_URI`** —— 同一組憑證存兩份會漂移，換密碼時
+> 一定有一邊忘了改。直接把既有 secret 掛成 BH 的 `D1_FIRESTORE_URI` 環境變數即可。
+
+Run（只需補 BH 服務帳號的讀取權限）：
 
 ```bash
-printf '%s' '<D1_FIRESTORE_URI 值>' | gcloud secrets create D1_FIRESTORE_URI \
-  --project=popinpoc1 --data-file=- --replication-policy=automatic
-gcloud secrets add-iam-policy-binding D1_FIRESTORE_URI --project=popinpoc1 \
+gcloud secrets describe ad-tools-d1videoad-firestore-uri --project=popinpoc1
+gcloud secrets add-iam-policy-binding ad-tools-d1videoad-firestore-uri --project=popinpoc1 \
   --member='serviceAccount:439393162392-compute@developer.gserviceaccount.com' \
   --role='roles/secretmanager.secretAccessor'
 ```
 
-Expected: `Created secret [D1_FIRESTORE_URI].` 與 IAM 綁定成功。
+Expected: secret 存在，IAM 綁定成功。
 
 > ⚠️ 這串 URI **內嵌 SCRAM 帳密**，等同 D1 campaign 設定庫的讀取權，必須走 Secret Manager。
 
@@ -2332,8 +2341,11 @@ Modify `cloudbuild.yaml`，把 Task 6 Step 2 的：
 改成：
 
 ```yaml
-        '--set-secrets=GOOGLE_CREDENTIALS_JSON=SERVICE_ACCOUNT_JSON:latest,PRISM_API_TOKEN=PRISM_API_TOKEN:latest,D1_FIRESTORE_URI=D1_FIRESTORE_URI:latest',
+        '--set-secrets=GOOGLE_CREDENTIALS_JSON=SERVICE_ACCOUNT_JSON:latest,PRISM_API_TOKEN=PRISM_API_TOKEN:latest,D1_FIRESTORE_URI=ad-tools-d1videoad-firestore-uri:latest',
 ```
+
+> 左邊是 BH 讀的環境變數名 `D1_FIRESTORE_URI`，右邊是既有的 secret 名
+> `ad-tools-d1videoad-firestore-uri`。兩者刻意不同名，就是為了重用而不是複製。
 
 - [ ] **Step 3: 🔴 對帳：拿實際數字去對 D1 後台 UI**
 
