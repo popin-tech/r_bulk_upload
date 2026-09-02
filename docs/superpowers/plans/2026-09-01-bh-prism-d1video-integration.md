@@ -1904,8 +1904,17 @@ for (acc, d), s in sorted(out.items()):
           f"spend={s['spend']:>10,.2f} 反推CPM={cpm:.2f}")
 ```
 
-Run: `D1_FIRESTORE_URI='<uri>' venv/bin/python poc/probe_d1video_bh.py EVOX_CPM 2026-08-28 2026-08-28`
-Expected: 反推 CPM 是整數（如 72.00）；`spend` 量級是幾百到幾千元（**不是幾十萬** —— 若看到幾十萬代表除數 1000 掉了）。
+Run: `D1_FIRESTORE_URI='<uri>' venv/bin/python poc/probe_d1video_bh.py CPM_MundoPixarExperience 2026-08-28 2026-08-28`
+
+> ⚠️ **執行時修正（2026-09-02）**：plan 原本寫 `EVOX_CPM`，但實查 Firestore 後發現
+> 那兩支拿來驗證口徑的 campaign（`6a8dbcf60b53275b884686e5` 橫式、
+> `6a913d5f8dbcc677dd696cb6` 直式）其實屬於 **`CPM_MundoPixarExperience`**，
+> 不是 EVOX_CPM。驗證帳戶一律改用前者。
+
+Expected（2026-09-02 實跑結果，可當回歸基準）：18 支 campaign（含已刪）、
+`imp=38,919 clk=77 spend=2,802.17`、**反推 CPM = 72.00 整**。
+`spend` 量級是幾百到幾千元（**不是幾十萬** —— 若看到幾十萬代表除數 1000 掉了）。
+整個帳戶 18 支加總後 CPM 仍是整數，是除數正確的強證據（不只是單支巧合）。
 
 - [ ] **Step 6: 跑全部測試**
 
@@ -2298,12 +2307,13 @@ Run:
 D1_FIRESTORE_URI='<uri>' PRISM_API_TOKEN='<token>' venv/bin/python app.py
 ```
 
-上傳三列：`V / EVOX_CPM`（正確）、`V / EVOX_CM`（打錯）、`P / 292-462-3142`。
+上傳三列：`V / CPM_MundoPixarExperience`（正確）、`V / CPM_MundoPixarExperienc`（打錯，少一個 e）、`P / 292-462-3142`。
 
 Expected:
-1. `inserted: 2`，errors 含 `Row 3: 查無 D1 影音帳戶「EVOX_CM」，你是不是要填「EVOX_CPM」？`
+1. `inserted: 2`，errors 含 `Row 3: 查無 D1 影音帳戶「CPM_MundoPixarExperienc」，你是不是要填「CPM_MundoPixarExperience」？`
 2. 清單出現橘色 `V` badge
-3. 對 `EVOX_CPM`（走期 2026-08-27~2026-08-28）跑全區間同步，SSE 出現 `[BH-FullSync-V] ID:EVOX_CPM [2026-08-28] Spend: 718 | Imp: 9983 | Click: 23` 量級的數字
+3. 對 `CPM_MundoPixarExperience`（走期 2026-08-27~2026-08-28）跑全區間同步，SSE 出現
+   `[BH-FullSync-V] ID:CPM_MundoPixarExperience [2026-08-28] Spend: 2802 | Imp: 38919 | Click: 77`
 4. 抽屜的每日明細，Conv. 與 CPA 都是 `—`
 
 - [ ] **Step 14: 跑全部測試**
