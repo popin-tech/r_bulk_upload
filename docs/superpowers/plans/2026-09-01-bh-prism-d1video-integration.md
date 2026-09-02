@@ -1620,8 +1620,29 @@ def validate_account(account):
     accounts = list_accounts()
     if account in accounts:
         return True, []
-    return False, difflib.get_close_matches(account, accounts, n=3, cutoff=0.6)
+
+    # ⚠️ 大小寫不同是最常見的打錯法，但 difflib 是**大小寫敏感**的
+    #    （'evox_cpm' 對 'EVOX_CPM' 相似度接近 0，會一個建議都給不出來）。
+    #    所以一律降冪比對，再映射回目錄裡的正確大小寫。
+    #    注意仍然回 False——Action4 與目錄查詢都用精確字串，大小寫錯就是查不到。
+    lower_map = {}
+    for a in accounts:
+        lower_map.setdefault(a.lower(), a)
+
+    key = str(account).strip().lower()
+    if key in lower_map:
+        return False, [lower_map[key]]
+    hits = difflib.get_close_matches(key, list(lower_map.keys()), n=3, cutoff=0.6)
+    return False, [lower_map[h] for h in hits]
 ```
+
+> ⚠️ **執行時追加兩項（2026-09-02，皆實測後才發現）**：
+> 1. **模糊比對必須大小寫不敏感**。第一版直接把 `account` 丟給 `difflib`，`evox_cpm` →
+>    `EVOX_CPM` 完全給不出建議，而那正是最常見的打錯法。已改成上面的降冪比對版本。
+> 2. **`MongoClient` 必須帶 `tlsCAFile=certifi.where()`**。macOS 的 Python.framework
+>    沒有 CA bundle，連 `*.firestore.goog:443` 會噴
+>    `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate`。
+>    `requirements.txt` 一併明列 `certifi`（原本只是 requests 的傳遞依賴）。
 
 - [ ] **Step 5: 跑測試確認通過**
 
