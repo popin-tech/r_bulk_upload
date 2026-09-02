@@ -425,28 +425,37 @@ class BHSyncService:
 
                 m_executor = ThreadPoolExecutor(max_workers=5)  # MGID 併發 6+ 會 429
                 try:
-                    def _fetch_m(acc):
-                        token = m_token_map.get(acc.account_id)
+                    # ⚠️⚠️ 絕不可把 SQLAlchemy 實例交給背景執行緒（2026-09-02 正式環境事故）。
+                    #   主執行緒每次 _upsert_stats 都會 commit，而 expire_on_commit 預設 True
+                    #   會讓 session 內所有實例失效；worker 之後再讀 acc.account_id 會觸發
+                    #   refresh、需要 app context → RuntimeError「Working outside of
+                    #   application context」。而且原本那行在 try 之外，例外會穿過
+                    #   future.result() 冒到最外層，**整個 sync_daily_stats 中止**。
+                    #   舊版 M 是最後一個平台，所以只是靜默少同步幾個 M 帳戶；排在它後面的
+                    #   P/V 會被一起殺掉。⇒ 事前在主執行緒把純字串取出來再送進 executor。
+                    m_pairs = [(str(a.account_id), m_token_map.get(a.account_id))
+                               for a in m_accounts]
+
+                    def _fetch_m(acc_id, token):
                         if not token:
-                            return (acc, None, 'No MGID token')
+                            return (acc_id, None, 'No MGID token')
                         try:
                             client = MgidClient(token)
-                            smap = client.fetch_daily_stats(
-                                acc.account_id, target_date, target_date)
-                            return (acc, smap, None)
+                            smap = client.fetch_daily_stats(acc_id, target_date, target_date)
+                            return (acc_id, smap, None)
                         except Exception as e:
-                            return (acc, None, str(e))
+                            return (acc_id, None, str(e))
 
-                    futures = {m_executor.submit(_fetch_m, acc): acc for acc in m_accounts}
+                    futures = [m_executor.submit(_fetch_m, aid, tok) for aid, tok in m_pairs]
                     for future in as_completed(futures):
-                        acc, smap, err = future.result()
+                        acc_id, smap, err = future.result()
                         if err:
-                            yield f"data: {json.dumps({'msg': f'  [M] {acc.account_id} 略過: {err}'})}\n\n"
+                            yield f"data: {json.dumps({'msg': f'  [M] {acc_id} 略過: {err}'})}\n\n"
                             continue
-                        key = (acc.account_id, target_date)
+                        key = (acc_id, target_date)
                         stats = smap.get(key, {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
-                        self._upsert_stats(acc.account_id, target_date, stats)
-                        log_msg = f"    [M] {acc.account_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
+                        self._upsert_stats(acc_id, target_date, stats)
+                        log_msg = f"    [M] {acc_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
                         yield f"data: {json.dumps({'msg': log_msg})}\n\n"
                 finally:
                     m_executor.shutdown(wait=False)
@@ -477,24 +486,27 @@ class BHSyncService:
                 v_client = D1VideoClient()
                 v_executor = ThreadPoolExecutor(max_workers=3)
                 try:
-                    def _fetch_v(acc):
-                        try:
-                            return acc, v_client.fetch_daily_stats(
-                                str(acc.account_id), target_date, target_date), None
-                        except Exception as e:
-                            return acc, None, str(e)
+                    # 同 M 區塊：只把純字串送進背景執行緒，不可傳 ORM 實例（見上方註解）
+                    v_ids = [str(a.account_id) for a in v_accounts]
 
-                    futures = {v_executor.submit(_fetch_v, acc): acc for acc in v_accounts}
+                    def _fetch_v(acc_id):
+                        try:
+                            return acc_id, v_client.fetch_daily_stats(
+                                acc_id, target_date, target_date), None
+                        except Exception as e:
+                            return acc_id, None, str(e)
+
+                    futures = [v_executor.submit(_fetch_v, aid) for aid in v_ids]
                     for future in as_completed(futures):
-                        acc, vmap, err = future.result()
+                        acc_id, vmap, err = future.result()
                         if err:
                             # fail-closed：這個帳戶今天完全不寫，留給補洞檢查重試
-                            yield f"data: {json.dumps({'msg': f'  [V] {acc.account_id} 未寫入: {err}', 'type': 'error'})}\n\n"
+                            yield f"data: {json.dumps({'msg': f'  [V] {acc_id} 未寫入: {err}', 'type': 'error'})}\n\n"
                             continue
-                        stats = vmap.get((str(acc.account_id), target_date),
+                        stats = vmap.get((acc_id, target_date),
                                          {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
-                        self._upsert_stats(acc.account_id, target_date, stats)
-                        log_msg = f"    [V] {acc.account_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
+                        self._upsert_stats(acc_id, target_date, stats)
+                        log_msg = f"    [V] {acc_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
                         yield f"data: {json.dumps({'msg': log_msg})}\n\n"
                 finally:
                     v_executor.shutdown(wait=False)
