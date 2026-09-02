@@ -8,7 +8,7 @@ class BHAccount(db.Model):
     __tablename__ = 'bh_accounts'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    platform = db.Column(db.Enum('R', 'D', 'M'), nullable=False, comment='廣告平台: R/D/M')
+    platform = db.Column(db.Enum('R', 'D', 'M', 'P', 'V'), nullable=False, comment='廣告平台: R/D/M/P/V')
     agent = db.Column(db.Integer, nullable=True, comment='R平台代理商(7168=4A, 7161=台客)') 
     account_id = db.Column(db.String(50), nullable=False, comment='平台帳戶ID')
     account_name = db.Column(db.String(255), nullable=False, comment='帳戶名稱')
