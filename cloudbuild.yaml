@@ -34,7 +34,11 @@ steps:
         '--port=8080',
         '--timeout=3600',
         '--service-account=439393162392-compute@developer.gserviceaccount.com',
-        '--set-secrets=GOOGLE_CREDENTIALS_JSON=SERVICE_ACCOUNT_JSON:latest',
+        # PRISM_API_TOKEN：Prism(P) 報表 API 的全域 token（不綁廣告主，等同全體廣告主
+        #   的報表讀取權），必須走 Secret Manager，不可放 --set-env-vars。
+        # D1_FIRESTORE_URI：D1 影音(V) 的 campaign 目錄連線字串（內嵌 SCRAM 帳密）。
+        #   刻意重用 ad_tools tool#8 已建的 secret，不另建一份——同一組憑證存兩份會漂移。
+        '--set-secrets=GOOGLE_CREDENTIALS_JSON=SERVICE_ACCOUNT_JSON:latest,PRISM_API_TOKEN=PRISM_API_TOKEN:latest,D1_FIRESTORE_URI=ad-tools-d1videoad-firestore-uri:latest',
         '--set-env-vars=GOOGLE_CLIENT_ID=439393162392-cjutf0jdpofs237mqu52goiafq3gqvtg.apps.googleusercontent.com,BROADCIEL_API_BASE_URL=https://broadciel.ads.rixbeedesk.com/api/v2,CLOUDSQL_CONNECTION_NAME=popinpoc1:asia-east1:internal-tool'
       ]
 

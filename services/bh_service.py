@@ -7,6 +7,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# 沒有轉換數據的平台：
+#   P（Prism）——平台根本沒實作轉換追蹤（prism_events 全表零筆 conversion 事件）
+#   V（D1 影音）——Action4 沒有轉換維度
+# 這兩個平台的 CPA/CV 不可顯示 0（會被誤讀成「CPA 超好」），一律顯示 —。
+PLATFORMS_WITHOUT_CONVERSIONS = {'P', 'V'}
+
 class BHService:
     def process_excel_upload(self, file_stream, owner_email: str) -> dict:
         """
@@ -47,18 +53,46 @@ class BHService:
             'errors': []
         }
 
+        # V（D1 影音）帳戶字串驗證：Excel 打錯一個字，Action4 只會查無資料回空，
+        # BH 會靜默記成花費 0——比報錯還危險。所以在上傳當下就比對 Firestore 目錄並給建議。
+        # 目錄有 5 分鐘快取，這裡主動預熱一次，整批上傳只會連一次 Firestore。
+        has_v_rows = any(str(r).strip().upper() == 'V' for r in df.get('平台', []))
+        v_catalog_error = None
+        if has_v_rows:
+            from services.bh_clients import d1_video_catalog
+            if not d1_video_catalog.d1_firestore_available():
+                v_catalog_error = '未設定 D1_FIRESTORE_URI，無法驗證 D1 影音帳戶，V 平台的列全部略過'
+            else:
+                try:
+                    d1_video_catalog.list_video_campaigns()
+                except Exception as e:
+                    v_catalog_error = f'連線 D1 影音目錄失敗（{e}），V 平台的列全部略過'
+
         for index, row in df.iterrows():
             results['total'] += 1
             try:
                 platform = str(row.get('平台', '')).strip().upper()
                 acc_id = str(row.get('AccID', '')).strip()
                 
-                if platform not in ['R', 'D', 'M']:
+                if platform not in ['R', 'D', 'M', 'P', 'V']:
                     results['errors'].append(f"Row {index+2}: Invalid Platform '{platform}'")
                     continue
                 if not acc_id:
                     results['errors'].append(f"Row {index+2}: Missing Account ID")
                     continue
+
+                if platform == 'V':
+                    if v_catalog_error:
+                        results['errors'].append(f"Row {index+2}: {v_catalog_error}")
+                        continue
+                    from services.bh_clients import d1_video_catalog
+                    ok, suggestions = d1_video_catalog.validate_account(acc_id)
+                    if not ok:
+                        hint = f"，你是不是要填「{suggestions[0]}」？" if suggestions else \
+                               "（大小寫必須完全一致；可用的帳戶清單見 D1 後台）"
+                        results['errors'].append(
+                            f"Row {index+2}: 查無 D1 影音帳戶「{acc_id}」{hint}")
+                        continue
 
                 # Parse Dates
                 try:
@@ -310,6 +344,8 @@ class BHService:
 
         for acc in accounts:
             data = acc.to_dict()
+            # 欄位名跟著本 repo 現況用 snake_case（bh.html 消費的欄位全是 snake_case）
+            data['supports_conversions'] = acc.platform not in PLATFORMS_WITHOUT_CONVERSIONS
             
             # Match via PK ID
             s = stats_map.get(acc.id, {'spend': 0, 'cv': 0, 'clicks': 0, 'impressions': 0})
@@ -383,7 +419,9 @@ class BHService:
             # CPC / CPA
             # Current CPA = Total Spend / Total CV
             # Target CPA = acc.cpa_goal
-            if s['cv'] > 0:
+            if not data['supports_conversions']:
+                data['current_cpa'] = None   # 平台沒有轉換數，不是「CPA 為 0」
+            elif s['cv'] > 0:
                 data['current_cpa'] = s['spend'] / s['cv']
             else:
                 data['current_cpa'] = 0
@@ -452,8 +490,8 @@ class BHService:
                 '剩餘天數': d.get('remaining_days'),
                 'CPC目標': d.get('cpc_goal'),
                 '目前CPC': d.get('current_cpc'),
-                'CPA目標': d.get('cpa_goal'),
-                '目前CPA': d.get('current_cpa'),
+                'CPA目標': d.get('cpa_goal') if d.get('supports_conversions') else '不適用',
+                '目前CPA': d.get('current_cpa') if d.get('supports_conversions') else '不適用',
                 'CTR目標': d.get('ctr_goal'),
                 '目前CTR': d.get('current_ctr'),
                 '走期開始': d.get('start_date'),
