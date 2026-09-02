@@ -23,7 +23,10 @@ data = [
     # R Platform example
     ['R', 111222, 'Rixbee 範例帳戶', 50000, '2024-01-01', '2024-12-31', 15, 250, 'CompleteCheckout', ''],
     # D Platform example
-    ['D', 333444, 'Discovery 範例帳戶', 30000, '2024-02-01', '2024-06-30', 10, 200, '', 'example_token_abcdef123']
+    ['D', 333444, 'Discovery 範例帳戶', 30000, '2024-02-01', '2024-06-30', 10, 200, '', 'example_token_abcdef123'],
+    # P Platform（Prism）example：AccID＝廣告主 id，格式 233-688-3595。
+    # 平台無轉換追蹤，CPAGoal 留空。
+    ['P', '292-462-3142', 'Prism 範例帳戶', 80000, '2026-08-01', '2026-08-31', 12, None, '', ''],
 ]
 
 for row in data:
@@ -56,8 +59,8 @@ for row in ws.iter_rows(min_row=2, max_row=1000):
 # --- Data Validation ---
 
 # 1. Platform (Col A)
-dv_platform = DataValidation(type="list", formula1='"R,D,M"', allow_blank=False)
-dv_platform.error = '必須填寫 R、D 或 M'
+dv_platform = DataValidation(type="list", formula1='"R,D,M,P"', allow_blank=False)
+dv_platform.error = '必須填寫 R、D、M 或 P（Prism）'
 dv_platform.errorTitle = '輸入錯誤'
 ws.add_data_validation(dv_platform)
 dv_platform.add('A2:A1000')

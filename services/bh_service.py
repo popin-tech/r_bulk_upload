@@ -53,7 +53,9 @@ class BHService:
                 platform = str(row.get('平台', '')).strip().upper()
                 acc_id = str(row.get('AccID', '')).strip()
                 
-                if platform not in ['R', 'D', 'M']:
+                # 註：'V'（D1 影音）刻意還沒放行——它的驗證與同步在 Task 11 才完成，
+                #     提前收下會建出永遠不會同步的帳戶。
+                if platform not in ['R', 'D', 'M', 'P']:
                     results['errors'].append(f"Row {index+2}: Invalid Platform '{platform}'")
                     continue
                 if not acc_id:

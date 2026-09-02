@@ -342,6 +342,19 @@ const app = createApp({
 
 
 
+        // 平台 badge 配色：R 藍 / M 綠 / P 紫 / D 透明底白框（維持原樣）。V 橘在 Task 11 加。
+        const PLATFORM_COLORS = {
+            R: '#0d6efd',
+            M: '#198754',
+            P: '#6f42c1',
+        };
+        const platformBadgeStyle = (platform) => {
+            const c = PLATFORM_COLORS[platform];
+            return c
+                ? `background: ${c}; border: 1px solid ${c};`
+                : 'background: transparent; border: 1px solid white;';
+        };
+
         const getAgentName = (agentId) => {
             if (agentId == '7161') return '台客';
             if (agentId == '7168') return '4A';
@@ -508,6 +521,7 @@ const app = createApp({
             archiveSelected,
             userEmail,
             getAgentName,
+            platformBadgeStyle,
             closeSyncModal,
             triggerAccountSync: () => {
                 if (!selectedAccount.value) return;

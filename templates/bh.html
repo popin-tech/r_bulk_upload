@@ -163,8 +163,7 @@
                             </td>
                             <td>
                                 <div class="d-flex flex-column align-items-center">
-                                    <span class="badge mb-1"
-                                        :style="acc.platform === 'R' ? 'background: #0d6efd; border: 1px solid #0d6efd;' : (acc.platform === 'M' ? 'background: #198754; border: 1px solid #198754;' : 'background: transparent; border: 1px solid white;')">
+                                    <span class="badge mb-1" :style="platformBadgeStyle(acc.platform)">
                                         [[ acc.platform ]]
                                     </span>
                                     <span v-if="acc.platform === 'R' && acc.agent" class="badge"
