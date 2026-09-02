@@ -7,6 +7,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# 沒有轉換數據的平台：
+#   P（Prism）——平台根本沒實作轉換追蹤（prism_events 全表零筆 conversion 事件）
+#   V（D1 影音）——Action4 沒有轉換維度
+# 這兩個平台的 CPA/CV 不可顯示 0（會被誤讀成「CPA 超好」），一律顯示 —。
+PLATFORMS_WITHOUT_CONVERSIONS = {'P', 'V'}
+
 class BHService:
     def process_excel_upload(self, file_stream, owner_email: str) -> dict:
         """
@@ -312,6 +318,8 @@ class BHService:
 
         for acc in accounts:
             data = acc.to_dict()
+            # 欄位名跟著本 repo 現況用 snake_case（bh.html 消費的欄位全是 snake_case）
+            data['supports_conversions'] = acc.platform not in PLATFORMS_WITHOUT_CONVERSIONS
             
             # Match via PK ID
             s = stats_map.get(acc.id, {'spend': 0, 'cv': 0, 'clicks': 0, 'impressions': 0})
@@ -385,7 +393,9 @@ class BHService:
             # CPC / CPA
             # Current CPA = Total Spend / Total CV
             # Target CPA = acc.cpa_goal
-            if s['cv'] > 0:
+            if not data['supports_conversions']:
+                data['current_cpa'] = None   # 平台沒有轉換數，不是「CPA 為 0」
+            elif s['cv'] > 0:
                 data['current_cpa'] = s['spend'] / s['cv']
             else:
                 data['current_cpa'] = 0
@@ -454,8 +464,8 @@ class BHService:
                 '剩餘天數': d.get('remaining_days'),
                 'CPC目標': d.get('cpc_goal'),
                 '目前CPC': d.get('current_cpc'),
-                'CPA目標': d.get('cpa_goal'),
-                '目前CPA': d.get('current_cpa'),
+                'CPA目標': d.get('cpa_goal') if d.get('supports_conversions') else '不適用',
+                '目前CPA': d.get('current_cpa') if d.get('supports_conversions') else '不適用',
                 'CTR目標': d.get('ctr_goal'),
                 '目前CTR': d.get('current_ctr'),
                 '走期開始': d.get('start_date'),

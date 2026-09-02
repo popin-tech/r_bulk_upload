@@ -678,7 +678,7 @@ dv_platform = DataValidation(type="list", formula1='"R,D,M,P"', allow_blank=Fals
 dv_platform.error = '必須填寫 R、D、M 或 P（Prism）'
 ```
 
-並在 `data` 的範例列（約 25–29 行）後面加一列：
+並在 `data` 的範例列後面加一列 P 範例（**這只是給 generator 自己用的樣本，不會進線上範本**，理由見下方警告）：
 
 ```python
     # P Platform（Prism）example：AccID＝廣告主 id，格式 233-688-3595。
@@ -686,21 +686,39 @@ dv_platform.error = '必須填寫 R、D、M 或 P（Prism）'
     ['P', '292-462-3142', 'Prism 範例帳戶', 80000, '2026-08-01', '2026-08-31', 12, None, '', ''],
 ```
 
-- [ ] **Step 3: 重新產生範本並確認**
+同時在 `generate_bh_template.py` 檔頭加一段警告 docstring，說明不可拿它覆蓋線上範本（內容見下方警告框）。
 
-Run:
+> ⚠️⚠️ **執行時發現（2026-09-02，已踩過一次）：`static/bh_import_template.xlsx` 不是
+> `generate_bh_template.py` 產生的。** committed 的那份是**手工維護**的：
+> ① 內含真實客戶範例列（juliart_覺亞髮品）帶真的 D / MGID token，AE 照著那三列填；
+> ② `tests/test_bh_token_import.py` 把它當成「恰好 3 列 R/D/M」的夾具，斷言
+> `result == {"total": 3, "inserted": 3, "errors": []}`。
+>
+> ⇒ **不可跑 `generate_bh_template.py` 覆蓋它**（會同時毀掉這兩者，且測試會紅）。
+> **也不可加範例列**（會讓那支測試的 total/inserted 變 4）。只能就地改 data validation。
+
+- [ ] **Step 3: 就地改線上範本的下拉（不重產）**
+
+Run：
 
 ```bash
-venv/bin/python generate_bh_template.py
-venv/bin/python -c "
+venv/bin/python - <<'PY'
 from openpyxl import load_workbook
-ws = load_workbook('static/bh_import_template.xlsx').active
-print([dv.formula1 for dv in ws.data_validations.dataValidation])
-for r in ws.iter_rows(min_row=1, max_row=5, values_only=True): print(r)
-"
+PATH = 'static/bh_import_template.xlsx'
+wb = load_workbook(PATH); ws = wb.active
+dv = next(d for d in ws.data_validations.dataValidation if str(d.sqref).startswith('A2'))
+print('before:', dv.formula1, '| sqref:', dv.sqref)
+dv.formula1 = '"R,D,M,P"'
+dv.error = '必須填寫 R、D、M 或 P（Prism）'
+wb.save(PATH)
+ws2 = load_workbook(PATH).active
+print('after :', [d.formula1 for d in ws2.data_validations.dataValidation])
+for r in ws2.iter_rows(min_row=1, max_row=5, values_only=True):
+    if any(c is not None for c in r): print('  ', r)
+PY
 ```
 
-Expected: formula1 之一為 `"R,D,M,P"`（**不含 V**），且看得到 P 的範例列。
+Expected: formula1 之一為 `"R,D,M,P"`（**不含 V**），且 **R/D/M 三列真實範例資料原封不動還在**。
 
 - [ ] **Step 4: 前端 badge 改成用共用函式**
 
@@ -841,11 +859,19 @@ Modify `templates/bh.html:222-225`，把：
 ```html
                                         :class="{'text-danger': acc.supports_conversions && acc.cpa_goal && acc.current_cpa > acc.cpa_goal}">[[
                                         acc.supports_conversions ? formatNumber(acc.current_cpa) : '—' ]]</span>
-                                    <span class="text-white-50" v-if="acc.supports_conversions && acc.cpa_goal" style="font-size: 13px;">/ [[
-                                        formatNumber(acc.cpa_goal) ]]</span>
-                                    <span class="text-white-50" v-if="!acc.supports_conversions" style="font-size: 11px;"
+                                    <template v-if="acc.supports_conversions">
+                                        <span class="text-white-50" v-if="acc.cpa_goal" style="font-size: 13px;">/ [[
+                                            formatNumber(acc.cpa_goal) ]]</span>
+                                        <span class="text-white-50" v-else style="font-size: 13px;">/ -</span>
+                                    </template>
+                                    <span class="text-white-50" v-else style="font-size: 11px;"
                                         title="此平台沒有轉換追蹤">平台無轉換</span>
 ```
+
+> ⚠️ **執行時修正（2026-09-02）**：原本這段的下一行還有一個 `<span ... v-else>/ -</span>`
+> 兄弟節點，plan 第一版沒把它算進去。`v-else` 必須**緊接**在 `v-if` 後面，中間插入其他元素
+> 會斷鏈；所以改成用 `<template v-if>` 把原本那組 `cpa_goal` 的 v-if/v-else 包起來，
+> 外層再做一組 v-if/v-else。上面已是修正後的正確版本，**連同原本的 `/ -` 那行一起取代**。
 
 - [ ] **Step 4: 抽屜的 CPA Goal 欄位對無轉換平台隱藏**
 
@@ -2221,8 +2247,22 @@ Modify `static/bh.js`，把 Task 4 Step 5 的 `PLATFORM_COLORS` 加上 V：
         };
 ```
 
-Run: `venv/bin/python generate_bh_template.py`
-Expected: 重新產生範本，下拉為 `"R,D,M,P,V"`。
+同樣**不可重產**線上範本（理由見 Task 4 Step 3 的警告），就地改下拉：
+
+```bash
+venv/bin/python - <<'PY'
+from openpyxl import load_workbook
+PATH = 'static/bh_import_template.xlsx'
+wb = load_workbook(PATH); ws = wb.active
+dv = next(d for d in ws.data_validations.dataValidation if str(d.sqref).startswith('A2'))
+dv.formula1 = '"R,D,M,P,V"'
+dv.error = '必須填寫 R、D、M、P（Prism）或 V（D1影音）'
+wb.save(PATH)
+print([d.formula1 for d in load_workbook(PATH).active.data_validations.dataValidation])
+PY
+```
+
+Expected: 下拉為 `"R,D,M,P,V"`，R/D/M 三列真實範例資料仍在，`unittest discover` 仍全綠。
 
 - [ ] **Step 13: 端到端驗證**
 
