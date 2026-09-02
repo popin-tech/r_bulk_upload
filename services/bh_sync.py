@@ -7,11 +7,18 @@ from database import db, BHAccount, BHDailyStats, get_d_token, get_d_token_map, 
 from services.bh_clients.r_client import RixbeeClient
 from services.bh_clients.d_client import DiscoveryClient
 from services.bh_clients.m_client import MgidClient
+from services.bh_clients.p_client import PrismClient
 from flask import current_app
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
+import os
 
 class BHSyncService:
+    @staticmethod
+    def _prism_client():
+        """Prism 一把全域 token（環境變數注入，無預設值）。未設定就拋，讓呼叫端記 log 略過。"""
+        return PrismClient(os.getenv('PRISM_API_TOKEN'))
+
     def sync_account_full_range_by_pk(self, pk_id, app, custom_start_date=None, custom_end_date=None):
         """
         Generator function for full range sync of a specific account record (by Database Primary Key).
@@ -192,6 +199,28 @@ class BHSyncService:
                         except Exception as e:
                             yield f"data: {json.dumps({'msg': f'  Error: {e}', 'type': 'error'})}\n\n"
 
+                elif account.platform == 'P':
+                    # Prism 無區間上限（實測 963 天一發 2.6 秒）⇒ 不切段，整個走期一發打完。
+                    p_client = self._prism_client()
+                    s_str = dates_to_sync[0].strftime('%Y-%m-%d')
+                    e_str = dates_to_sync[-1].strftime('%Y-%m-%d')
+                    yield f"data: {json.dumps({'msg': f'Fetching {s_str} ~ {e_str} (single request)...'})}\n\n"
+                    try:
+                        p_map = p_client.fetch_daily_stats(s_str, e_str, [str(account_id)])
+                    except Exception as e:
+                        # fail-closed：抓取失敗就整批不寫，避免 0 被寫進去後補洞檢查再也不碰
+                        yield f"data: {json.dumps({'msg': f'  Error: {e}（本區間未寫入任何資料）', 'type': 'error'})}\n\n"
+                        return
+                    for target_date in dates_to_sync:
+                        target_str = target_date.strftime('%Y-%m-%d')
+                        stats = p_map.get((str(account_id), target_str),
+                                          {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                        self._upsert_stats(account_id, target_str, stats, app=app)
+                        log_msg = f"  [{target_str}] Spend: {int(stats.get('spend', 0))} | Imp: {stats.get('impressions', 0)} | Click: {stats.get('clicks', 0)}"
+                        print(f"[BH-FullSync-P] ID:{account_id} {log_msg}", flush=True)
+                        yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                    yield f"data: {json.dumps({'msg': f'  -> Saved.'})}\n\n"
+
             yield f"data: {json.dumps({'msg': 'Full Sync Completed!', 'done': True})}\n\n"
             
         except Exception as e:
@@ -235,6 +264,7 @@ class BHSyncService:
             r_accounts = [a for a in accounts if a.platform == 'R']
             d_accounts = [a for a in accounts if a.platform == 'D']
             m_accounts = [a for a in accounts if a.platform == 'M']
+            p_accounts = [a for a in accounts if a.platform == 'P']
 
             # Randomize D platform accounts to prevent same accounts always failing on API instability
             if d_accounts:
@@ -377,6 +407,23 @@ class BHSyncService:
                 finally:
                     m_executor.shutdown(wait=False)
                 yield f"data: {json.dumps({'msg': f'  M Platform processed ({len(m_accounts)} accounts).'})}\n\n"
+
+            # --- Process P Platform (Prism：一把 token 看全部廣告主 → 整批 1 個 request) ---
+            if p_accounts:
+                yield f"data: {json.dumps({'msg': f'Processing {len(p_accounts)} P-Platform accounts (Prism, single request)...'})}\n\n"
+                try:
+                    p_ids = list({str(a.account_id) for a in p_accounts})
+                    p_map = self._prism_client().fetch_daily_stats(target_date, target_date, p_ids)
+                    for acc in p_accounts:
+                        stats = p_map.get((str(acc.account_id), target_date),
+                                          {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                        self._upsert_stats(acc.account_id, target_date, stats)
+                        log_msg = f"    [P] {acc.account_id}: Spend={int(stats.get('spend',0))}, Clicks={stats.get('clicks',0)}"
+                        yield f"data: {json.dumps({'msg': log_msg})}\n\n"
+                    yield f"data: {json.dumps({'msg': f'  P Platform processed ({len(p_accounts)} accounts, 1 request).'})}\n\n"
+                except Exception as e:
+                    # fail-closed：整批不寫（P 是一發全拿，本來就沒有部分成功的中間狀態）
+                    yield f"data: {json.dumps({'msg': f'  Error in P Platform: {str(e)}（{len(p_accounts)} 個帳戶皆未寫入）', 'type': 'error'})}\n\n"
 
             elapsed = time.time() - start_time
             time_str = f"{int(elapsed // 60)}分{int(elapsed % 60)}秒({int(elapsed)}秒)"
@@ -631,6 +678,24 @@ class BHSyncService:
                                         self._upsert_stats(acc_id, tstr, stats)
                                 except Exception as e:
                                     logs.append(f"[M] {acc_id} {s_str}~{e_str} error: {e}")
+
+                        elif platform == 'P':
+                            # 無區間上限 ⇒ 直接用缺漏日的頭尾一發打完，多回來的日子用不到就丟。
+                            s_str = missing_dates[0].strftime('%Y-%m-%d')
+                            e_str = missing_dates[-1].strftime('%Y-%m-%d')
+                            try:
+                                p_map = self._prism_client().fetch_daily_stats(
+                                    s_str, e_str, [str(acc_id)])
+                            except Exception as e:
+                                # fail-closed：不寫任何一天，留給下次補洞檢查重試
+                                logs.append(f"[P] {acc_id} {s_str}~{e_str} error: {e}（未寫入）")
+                                return logs
+                            for td in missing_dates:
+                                tstr = td.strftime('%Y-%m-%d')
+                                stats = p_map.get((str(acc_id), tstr),
+                                                  {'spend': 0, 'impressions': 0, 'clicks': 0, 'conversions': 0})
+                                self._upsert_stats(acc_id, tstr, stats)
+                            logs.append(f"     P-Platform: Processed {len(missing_dates)} days.")
 
                 except Exception as e:
                     logs.append(f"Error processing {acc_id}: {str(e)}")
