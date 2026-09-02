@@ -16,6 +16,27 @@
 
 ---
 
+## 執行狀態（2026-09-02）
+
+| Task | 狀態 | 備註 |
+|---|---|---|
+| 1 DB migration | ✅ | 正式 DB enum 已是 `('R','D','M','P','V')`，既有 217 筆帳戶完好 |
+| 2 PrismClient | ✅ | 9 測試 ＋ 真 API 對上回歸基準 |
+| 3 bh_sync P 分支 | ✅ | 真同步驗過，fail-closed 用錯 token 實測成立 |
+| 4 P 上傳/範本/badge | ✅ | 執行中踩到範本回歸，見下方修訂紀錄 |
+| 5 CPA/CV 顯示 — | ✅ | 執行中踩到 v-if/v-else 斷鏈，已修 |
+| **6 P 上線** | ⏸ | secret 與 cloudbuild 已就緒，**等 Task 12 一起 push** |
+| 7 action4_client | ✅ | 11 測試（含全域併發上限實測） |
+| 8 d1_video_metrics | ✅ | 7 測試 |
+| 9 d1_video_catalog | ✅ | 9 測試；真 Firestore：395 支 / 未刪 308 / 170 帳戶 |
+| 10 v_client | ✅ | 7 測試；真 API：18 支加總 CPM 72.00 整 |
+| 11 V 同步/上傳/範本 | ✅ | 端到端實測通過 |
+| **12 V 上線** | ⏸ | **卡在 Step 3 的 D1 後台對帳（需人工登入後台）** |
+
+測試數：1 → **55**，全綠。
+
+---
+
 ## Global Constraints
 
 ### 通用
