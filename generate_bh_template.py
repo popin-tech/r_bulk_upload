@@ -2,8 +2,9 @@
 
 committed 的 static/bh_import_template.xlsx 是**手工維護**的，不是這支產生的：
   1. 它內含真實客戶範例列（juliart_覺亞髮品），帶真的 D / MGID token，AE 是照著那三列填的；
-  2. tests/test_bh_token_import.py 把它當成「恰好 3 列 R/D/M」的實測夾具，
-     斷言 result == {"total": 3, "inserted": 3, "errors": []}。
+  2. tests/test_bh_token_import.py 把它當成「恰好 5 列 R/D/M/P/V」的實測夾具，
+     斷言 result == {"total": 5, "inserted": 5, "errors": []}。
+     ⇒ 線上範本增刪範例列時，那支測試的數字要一起改。
 
 直接跑這支會把上面兩者一起毀掉（2026-09-02 實際踩過）。
 
@@ -30,7 +31,9 @@ ws = wb.active
 ws.title = "Import Template"
 
 # Headers
-headers = ['平台', 'AccID', '名稱', 'Budget', 'StartDate', 'EndDate', 'CPCGoal', 'CPAGoal', 'R的cv定義', 'D&MGID的Token']
+# 註：AccID 標題帶括號註解；bh_service 讀檔時會用 _strip_header_note 去掉註解，
+#     所以 AE 手上標題為純 'AccID' 的舊範本一樣收得下。
+headers = ['平台', 'AccID（MGID 填 API ID）', '名稱', 'Budget', 'StartDate', 'EndDate', 'CPCGoal', 'CPAGoal', 'R的cv定義', 'D&MGID的Token']
 ws.append(headers)
 
 # Style Headers
@@ -45,10 +48,10 @@ data = [
     ['D', 333444, 'Discovery 範例帳戶', 30000, '2024-02-01', '2024-06-30', 10, 200, '', 'example_token_abcdef123'],
     # P Platform（Prism）example：AccID＝廣告主 id，格式 233-688-3595。
     # 平台無轉換追蹤，CPAGoal 留空。
-    ['P', '292-462-3142', 'Prism 範例帳戶', 80000, '2026-08-01', '2026-08-31', 12, None, '', ''],
-    # V Platform（D1 影音）example：AccID＝D1 影音帳戶字串，大小寫必須完全一致。
-    # 平台無轉換追蹤，CPAGoal 留空。
-    ['V', 'CPM_MundoPixarExperience', 'D1影音 範例帳戶', 150000, '2026-08-01', '2026-08-31', 20, None, '', ''],
+    ['P', '233-688-3595', 'Prism 廣告主（範例）', 20000, '2026-07-01', '2026-07-31', 5, None, '', ''],
+    # V Platform（D1 影音）example：AccID＝D1 影音帳戶字串，**大小寫必須完全一致**
+    # （打錯字上傳時會被擋下並提示正確拼法）。平台無轉換追蹤，CPAGoal 留空。
+    ['V', 'CPM_MundoPixarExperience', 'D1 影音帳戶（範例）', 30000, '2026-07-01', '2026-07-31', 5, None, '', ''],
 ]
 
 for row in data:
@@ -60,7 +63,7 @@ for row in data:
 
 # Set column widths
 ws.column_dimensions['A'].width = 8
-ws.column_dimensions['B'].width = 15
+ws.column_dimensions['B'].width = 30  # 放得下標題註解與 CPM_MundoPixarExperience
 ws.column_dimensions['C'].width = 25  # Name
 ws.column_dimensions['D'].width = 12  # Budget
 ws.column_dimensions['E'].width = 12  # StartDate
