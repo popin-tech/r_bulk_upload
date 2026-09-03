@@ -1,4 +1,5 @@
 import pandas as pd
+import re
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func, case
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +14,16 @@ logger = logging.getLogger(__name__)
 # 這兩個平台的 CPA/CV 不可顯示 0（會被誤讀成「CPA 超好」），一律顯示 —。
 PLATFORMS_WITHOUT_CONVERSIONS = {'P', 'V'}
 
+# 範本的欄位標題可能帶括號註解（例如「AccID（MGID 填 API ID）」），但程式是用標題文字
+# 當鍵取值（row.get('AccID')），而且 AE 手上還留著標題為純 'AccID' 的舊範本。
+# ⇒ 讀進來先把括號註解去掉，新舊範本都收得下。全形（）與半形 () 都吃。
+_HEADER_NOTE_RE = re.compile(r'\s*[（(].*$')
+
+
+def _strip_header_note(name):
+    """'AccID（MGID 填 API ID）' -> 'AccID'；沒有註解的欄名原樣回傳。"""
+    return _HEADER_NOTE_RE.sub('', str(name)).strip()
+
 class BHService:
     def process_excel_upload(self, file_stream, owner_email: str) -> dict:
         """
@@ -24,6 +35,9 @@ class BHService:
             df = pd.read_excel(file_stream)
         except Exception as e:
             raise ValueError(f"Failed to read Excel file: {e}")
+
+        # 去掉欄位標題的括號註解，讓新舊範本的欄名一致（見 _strip_header_note）
+        df.columns = [_strip_header_note(c) for c in df.columns]
 
         # Normalize column names
         # User's example: 平台, AccID, Budget, StartDate, EndDate, CPCGoal, CPAGoal, R的cv定義

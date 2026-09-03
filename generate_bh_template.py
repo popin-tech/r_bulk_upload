@@ -31,7 +31,9 @@ ws = wb.active
 ws.title = "Import Template"
 
 # Headers
-headers = ['平台', 'AccID', '名稱', 'Budget', 'StartDate', 'EndDate', 'CPCGoal', 'CPAGoal', 'R的cv定義', 'D&MGID的Token']
+# 註：AccID 標題帶括號註解；bh_service 讀檔時會用 _strip_header_note 去掉註解，
+#     所以 AE 手上標題為純 'AccID' 的舊範本一樣收得下。
+headers = ['平台', 'AccID（MGID 填 API ID）', '名稱', 'Budget', 'StartDate', 'EndDate', 'CPCGoal', 'CPAGoal', 'R的cv定義', 'D&MGID的Token']
 ws.append(headers)
 
 # Style Headers
@@ -61,7 +63,7 @@ for row in data:
 
 # Set column widths
 ws.column_dimensions['A'].width = 8
-ws.column_dimensions['B'].width = 15
+ws.column_dimensions['B'].width = 30  # 放得下標題註解與 CPM_MundoPixarExperience
 ws.column_dimensions['C'].width = 25  # Name
 ws.column_dimensions['D'].width = 12  # Budget
 ws.column_dimensions['E'].width = 12  # StartDate
