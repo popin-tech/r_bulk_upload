@@ -37,7 +37,7 @@
     {% set page_title = "Budget Hunter 神盾追速" %}
     {% include '_header.html' %}
 
-    <main class="cmp-main">
+    <main class="cmp-main bh-main">
         <div id="app" class="workspace-container">
             <!-- Header & Actions -->
             <div class="workspace-header">
@@ -141,8 +141,7 @@
                                     @change="toggleSelectAll()">
                             </th>
                             <th style="width: 50px;">Sys</th>
-                            <th>ID</th>
-                            <th>Account Name</th>
+                            <th>Account</th>
                             <th style="width: 200px;">Yesterday Spend</th> <!-- Progress Bar -->
                             <th style="width: 200px;">Total Budget</th> <!-- Progress Bar -->
                             <th style="width: 140px;">Period</th>
@@ -153,7 +152,7 @@
                     </thead>
                     <tbody>
                         <tr v-if="accounts.length === 0 && !loading">
-                            <td colspan="8" class="text-center py-5">No accounts found. Upload some!</td>
+                            <td colspan="9" class="text-center py-5">No accounts found. Upload some!</td>
                         </tr>
                         <tr v-for="acc in accounts" :key="acc.id" :id="'row-' + acc.id" @click="openDrawer(acc)"
                             style="cursor: pointer;">
@@ -172,8 +171,12 @@
                                     </span>
                                 </div>
                             </td>
-                            <td>[[ acc.account_id ]]</td>
-                            <td>[[ acc.account_name || '-' ]]</td>
+                            <td class="bh-account-td">
+                                <div class="d-flex flex-column bh-account-cell">
+                                    <span class="bh-account-id" :title="acc.account_id">[[ acc.account_id ]]</span>
+                                    <span class="bh-account-name" :title="acc.account_name">[[ acc.account_name || '-' ]]</span>
+                                </div>
+                            </td>
 
                             <!-- Yesterday Spend -->
                             <td>
