@@ -448,6 +448,84 @@ const app = createApp({
             }
         };
 
+        // --- Column Widths（可拖拉調整，存在 localStorage，只影響這台電腦的這個瀏覽器）---
+        // Account 欄不設寬度、吃掉剩餘空間；拖拉時移動的是「兩欄之間的邊界」：
+        // 左欄變寬、右欄等量變窄，總寬不變（拖 Account 右緣只改 Yesterday Spend）。
+        const COL_WIDTH_KEY = 'bh.colWidths.v1';
+        const COL_DEFAULTS = { yesterday: 200, total: 200, period: 140, cpc: 100, cpa: 100, ctr: 100 };
+        const COL_MIN = { yesterday: 110, total: 110, period: 120, cpc: 80, cpa: 80, ctr: 80 };
+        const COL_ORDER = ['account', 'yesterday', 'total', 'period', 'cpc', 'cpa', 'ctr'];
+        const FIXED_COLS_WIDTH = 40 + 50; // checkbox + Sys
+        const ACCOUNT_MIN = 180;
+
+        const loadColWidths = () => {
+            const widths = { ...COL_DEFAULTS };
+            try {
+                const saved = JSON.parse(localStorage.getItem(COL_WIDTH_KEY) || '{}');
+                Object.keys(COL_DEFAULTS).forEach(k => {
+                    if (Number.isFinite(saved[k])) widths[k] = Math.max(COL_MIN[k], saved[k]);
+                });
+            } catch (e) { /* 讀不到（無痕、被封鎖）就用預設 */ }
+            return widths;
+        };
+        const saveColWidths = () => {
+            try { localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(colWidths.value)); } catch (e) { }
+        };
+
+        const colWidths = ref(loadColWidths());
+        const hasCustomColWidths = computed(() =>
+            Object.keys(COL_DEFAULTS).some(k => colWidths.value[k] !== COL_DEFAULTS[k]));
+        // Account 至少保留 ACCOUNT_MIN，其餘欄加總超出容器時表格變寬、外框出現橫向捲軸
+        const tableMinWidth = computed(() =>
+            FIXED_COLS_WIDTH + ACCOUNT_MIN + Object.values(colWidths.value).reduce((a, b) => a + b, 0));
+
+        const startColResize = (event, col) => {
+            const right = COL_ORDER[COL_ORDER.indexOf(col) + 1];
+            const startX = event.clientX;
+            const startLeft = colWidths.value[col];
+            const startRight = colWidths.value[right];
+            const handle = event.currentTarget;
+            handle.setPointerCapture(event.pointerId);
+            document.body.classList.add('bh-col-resizing');
+
+            const onMove = (e) => {
+                let d = e.clientX - startX;
+                if (col === 'account') {
+                    // Account 會自動補位，只需改右欄
+                    d = Math.min(d, startRight - COL_MIN[right]);
+                    colWidths.value = { ...colWidths.value, [right]: startRight - d };
+                    return;
+                }
+                d = Math.max(d, COL_MIN[col] - startLeft);
+                d = Math.min(d, startRight - COL_MIN[right]);
+                colWidths.value = { ...colWidths.value, [col]: startLeft + d, [right]: startRight - d };
+            };
+            const onUp = () => {
+                handle.removeEventListener('pointermove', onMove);
+                handle.removeEventListener('pointerup', onUp);
+                handle.removeEventListener('pointercancel', onUp);
+                document.body.classList.remove('bh-col-resizing');
+                saveColWidths();
+            };
+            handle.addEventListener('pointermove', onMove);
+            handle.addEventListener('pointerup', onUp);
+            handle.addEventListener('pointercancel', onUp);
+        };
+
+        // 雙擊把手：這條邊界兩側的欄位恢復預設
+        const resetColWidth = (col) => {
+            const right = COL_ORDER[COL_ORDER.indexOf(col) + 1];
+            const next = { ...colWidths.value, [right]: COL_DEFAULTS[right] };
+            if (col !== 'account') next[col] = COL_DEFAULTS[col];
+            colWidths.value = next;
+            saveColWidths();
+        };
+
+        const resetColWidths = () => {
+            colWidths.value = { ...COL_DEFAULTS };
+            try { localStorage.removeItem(COL_WIDTH_KEY); } catch (e) { }
+        };
+
         // --- Lifecycle ---
 
         onMounted(() => {
@@ -484,6 +562,12 @@ const app = createApp({
             closeSyncModal,
             getProgressColor,
             triggerDownload,
+            colWidths,
+            hasCustomColWidths,
+            tableMinWidth,
+            startColResize,
+            resetColWidth,
+            resetColWidths,
             formatDate: (d) => {
                 if (!d) return '-';
                 try {
