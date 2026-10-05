@@ -259,19 +259,14 @@ body {
     animation: flash-white 1.0s ease-out;
 }
 
-/* BH 表格欄位多，放寬主內容區（cmp-main 預設 max-width 1300px 是給 CMP 頁用的） */
+/* BH 表格欄位多，放寬主內容區（cmp-main 預設 max-width 1300px 是給 CMP 頁用的）。
+   玻璃框最寬 1680px：1980px 寬的視窗左右各留 150px */
 .cmp-main.bh-main {
-    max-width: 1800px;
+    max-width: 1728px;
     padding: 32px 24px;
 }
 
-/* Account 欄：ID 在上（小字）、名稱在下，皆單行截斷以維持列高。
-   max-width:0 讓此欄最小寬度歸零，只分到其他欄剩下的寬度，內容依實際欄寬截斷 */
-.bh-account-td {
-    max-width: 0;
-    min-width: 180px;
-}
-
+/* Account 欄：ID 在上（小字）、名稱在下，皆單行截斷以維持列高 */
 .bh-account-cell {
     line-height: 1.3;
     min-width: 0;
@@ -288,4 +283,66 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* 主表外框：表格比框寬時橫向捲動（直向維持裁切，保留圓角） */
+.bh-table-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* 可拖拉欄寬：fixed layout 讓欄寬照 th 設定走，沒設寬度的 Account 吃剩餘空間 */
+.bh-resizable-table {
+    table-layout: fixed;
+}
+
+.bh-resizable-table th {
+    position: relative;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bh-resizable-table td {
+    overflow: hidden;
+}
+
+/* 欄位拖窄時數字不斷行、超出顯示…，避免撐高列高 */
+.bh-resizable-table td .d-flex.flex-column > span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bh-col-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 8px;
+    height: 100%;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 1;
+}
+
+.bh-col-resizer::after {
+    content: "";
+    position: absolute;
+    top: 25%;
+    right: 3px;
+    width: 2px;
+    height: 50%;
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 1px;
+}
+
+.bh-col-resizer:hover::after,
+.bh-col-resizing .bh-col-resizer::after {
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.bh-col-resizing,
+.bh-col-resizing * {
+    cursor: col-resize !important;
+    user-select: none;
 }
