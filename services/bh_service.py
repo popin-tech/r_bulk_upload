@@ -24,6 +24,35 @@ def _strip_header_note(name):
     """'AccID（MGID 填 API ID）' -> 'AccID'；沒有註解的欄名原樣回傳。"""
     return _HEADER_NOTE_RE.sub('', str(name)).strip()
 
+
+# 空白儲存格 pandas 讀成 NaN，直接 str() 會變成 'nan'（2026-10-14：D 列 AccID 空白 ⇒ bh_accounts 與
+# 共用 token 表 nexus.d_tokens 都多一列 account_id='nan'，nexus 資料倉庫把同一份數字算兩次）。
+# 手打的 N/A、null 之類也當空白。
+_NA_TEXT = {'', 'nan', 'none', 'null', 'n/a', 'na', '#n/a'}
+
+# 帳戶 ID 格式；nexus 資料倉庫（ad_tools run.ts isValidAccountId）與走速用同一套。V 另外比對 D1 影音目錄。
+_ACC_ID_RE = {
+    'D': re.compile(r'^\d+$'),
+    'R': re.compile(r'^\d+$'),
+    'M': re.compile(r'^\d+$'),
+    'P': re.compile(r'^\d{3}-\d{3}-\d{4}$'),
+}
+_ACC_ID_HINT = {'D': '純數字', 'R': '純數字', 'M': '純數字（API ID）', 'P': 'xxx-xxx-xxxx'}
+
+
+def _cell_str(row, col):
+    """儲存格 → 去頭尾空白的字串；欄位不存在、空白、NaN、N/A 之類一律回 None。
+    整數值的小數（37975.0）還原成 '37975'。"""
+    if col not in row:
+        return None
+    v = row[col]
+    if v is None or (not isinstance(v, str) and pd.isna(v)):
+        return None
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    s = str(v).strip()
+    return None if s.lower() in _NA_TEXT else s
+
 class BHService:
     def process_excel_upload(self, file_stream, owner_email: str) -> dict:
         """
@@ -32,7 +61,9 @@ class BHService:
         CVDefinition, D&MGID的Token（D 與 MGID 選填）
         """
         try:
-            df = pd.read_excel(file_stream)
+            # dtype=object：保留每格原本的型別。不然整欄 AccID 純數字、其中一格空白時，
+            # pandas 會把整欄讀成小數，其他正常列的 ID 變成 '37975.0'。
+            df = pd.read_excel(file_stream, dtype=object)
         except Exception as e:
             raise ValueError(f"Failed to read Excel file: {e}")
 
@@ -85,14 +116,21 @@ class BHService:
         for index, row in df.iterrows():
             results['total'] += 1
             try:
-                platform = str(row.get('平台', '')).strip().upper()
-                acc_id = str(row.get('AccID', '')).strip()
-                
+                platform = (_cell_str(row, '平台') or '').upper()
+                acc_id = _cell_str(row, 'AccID')
+
+                if not platform:
+                    results['errors'].append(f"Row {index+2}: 缺平台，這列略過")
+                    continue
                 if platform not in ['R', 'D', 'M', 'P', 'V']:
                     results['errors'].append(f"Row {index+2}: Invalid Platform '{platform}'")
                     continue
                 if not acc_id:
-                    results['errors'].append(f"Row {index+2}: Missing Account ID")
+                    results['errors'].append(f"Row {index+2}: 缺 AccID（空白或 N/A 之類的值），這列略過")
+                    continue
+                if platform in _ACC_ID_RE and not _ACC_ID_RE[platform].match(acc_id):
+                    results['errors'].append(
+                        f"Row {index+2}: AccID「{acc_id}」格式不對（{platform} 要{_ACC_ID_HINT[platform]}），這列略過")
                     continue
 
                 if platform == 'V':
@@ -108,7 +146,10 @@ class BHService:
                             f"Row {index+2}: 查無 D1 影音帳戶「{acc_id}」{hint}")
                         continue
 
-                # Parse Dates
+                # Parse Dates（空白會變 NaT，送進 MySQL 會讓整批 commit 失敗、看不出是哪一列）
+                if _cell_str(row, 'StartDate') is None or _cell_str(row, 'EndDate') is None:
+                    results['errors'].append(f"Row {index+2}: 缺 StartDate 或 EndDate，這列略過")
+                    continue
                 try:
                     s_date = pd.to_datetime(row['StartDate']).date()
                     e_date = pd.to_datetime(row['EndDate']).date()
@@ -116,7 +157,10 @@ class BHService:
                     results['errors'].append(f"Row {index+2}: Invalid Date Format")
                     continue
 
-                # Parse Goals
+                # Parse Goals（Budget 空白會變 NaN，PyMySQL 寫不進去、整批 commit 失敗）
+                if _cell_str(row, 'Budget') is None:
+                    results['errors'].append(f"Row {index+2}: 缺 Budget，這列略過")
+                    continue
                 try:
                     budget = float(row.get('Budget', 0))
                     cpc = float(row.get('CPCGoal', 0)) if pd.notna(row.get('CPCGoal')) else None
@@ -159,17 +203,13 @@ class BHService:
                     status='active'
                 )
                 
-                # If 'AccountName' or '名稱' exists
-                if 'Name' in row:
-                    account.account_name = str(row['Name'])
-                elif '名稱' in row:
-                    account.account_name = str(row['名稱'])
-                elif 'AccountName' in row:
-                    account.account_name = str(row['AccountName'])
-                else:
-                    # Logic 2) For BHDAccountToken, user request says "account_name" field exists.
-                    # If user uploads Token, they likely upload Name too? 
-                    pass
+                # If 'AccountName' or '名稱' exists（取第一個存在的欄；空白就保留上面的 平台_ID 預設名，不寫 'nan'）
+                for name_col in ('Name', '名稱', 'AccountName'):
+                    if name_col in row:
+                        name_val = _cell_str(row, name_col)
+                        if name_val:
+                            account.account_name = name_val
+                        break
                 
                 db.session.add(account)
                 
